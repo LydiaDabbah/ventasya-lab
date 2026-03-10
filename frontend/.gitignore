@@ -1,0 +1,70 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files (can opt-in for committing if needed)
+.env*
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# Python backend
+/venv/
+__pycache__/
+*.pyc
+
+# Alembic SQLite history (si la usas)
+/migrations/
+*.sqlite3
+
+# Logs y caché
+*.log
+*.cache
+
+# IDEs
+.vscode/
+.idea/
+
+# MacOS
+.DS_Store
+
+# Public assets pesados que no deben ir al repo
+/public/img/*
+!public/img/.gitkeep
+
+# Archivos comprimidos
+*.zip
+*.tar.gz
+*.rar
