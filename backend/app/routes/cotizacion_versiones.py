@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from sqlalchemy.orm import Session
 from uuid import UUID
 from typing import List, Dict, Any
+from datetime import datetime
 
 from app.db.database import SessionLocal
 from app.models.cotizacion import Cotizacion
@@ -105,3 +106,31 @@ def obtener_version(id_version: UUID, db: Session = Depends(get_db)):
     }
 
     return out
+
+
+@router.patch("/activar/{id_version}", response_model=Dict[str, Any])
+def activar_version(id_version: UUID, id_vendedor: str | None = Query(None), db: Session = Depends(get_db)):
+    version = db.query(CotizacionVersion).filter(CotizacionVersion.id_version == id_version).first()
+    if not version:
+        raise HTTPException(status_code=404, detail="Versión no encontrada")
+
+    cot = db.query(Cotizacion).filter(Cotizacion.id_cotizacion == version.id_cotizacion).first()
+    if not cot:
+        raise HTTPException(status_code=404, detail="Cotización no encontrada")
+
+    if id_vendedor and str(cot.id_vendedor) != str(id_vendedor):
+        raise HTTPException(status_code=403, detail="No autorizado para modificar esta cotización")
+
+    cot.current_version_id = version.id_version
+    if hasattr(cot, "updated_at"):
+        cot.updated_at = datetime.utcnow()
+
+    db.commit()
+    db.refresh(cot)
+
+    return {
+        "mensaje": "Versión activada correctamente",
+        "id_cotizacion": str(cot.id_cotizacion),
+        "numero_cotizacion": cot.numero_cotizacion,
+        "current_version_id": str(cot.current_version_id) if cot.current_version_id else None,
+    }

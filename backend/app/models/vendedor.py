@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, Boolean, DateTime,UniqueConstraint
+from sqlalchemy import Column, String, Boolean, DateTime, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from app.db.database import Base
 
@@ -13,6 +13,7 @@ class Vendedor(Base):
     email = Column(String, nullable=False, unique=True)
     nombre_negocio = Column(String, nullable=False)  # tipo “Velas Romi”
     clave = Column(String, nullable=False, unique=True)  # tipo “velas-romi”
+    moneda = Column(String(3), nullable=False, default="MXN")
     activo = Column(Boolean, default=True)
     password_hash = Column(String, nullable=False)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)

@@ -22,6 +22,26 @@ import DiscountCode from "@/components/DiscountCode";
 import { getCodigoById } from "@/utils/getCodigoById";
 import { useVolverAlCatalogo } from "@/hooks/useVolverAlCatalogo";
 
+function formatMoneyInput(value) {
+  const cleaned = String(value ?? "").replace(/[^\d.]/g, "");
+  if (!cleaned) return "";
+
+  const [integerRaw, ...decimalParts] = cleaned.split(".");
+  const integerNormalized = integerRaw.replace(/^0+(?=\d)/, "");
+  const integerPart = integerNormalized || "0";
+  const integerWithCommas = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+
+  if (decimalParts.length === 0) return integerWithCommas;
+  return `${integerWithCommas}.${decimalParts.join("").slice(0, 2)}`;
+}
+
+function parseMoneyInput(value) {
+  const cleaned = String(value ?? "").replace(/,/g, "").trim();
+  if (!cleaned) return 0;
+  const parsed = Number(cleaned);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 export default function ResumenCotizacionInner() {
   const router = useRouter();
   const { vendedor, clave } = useVendedor();
@@ -36,6 +56,7 @@ export default function ResumenCotizacionInner() {
     subtotal,
     totalCalculado,
     updateCantidad,
+    updateNotaPersonalizable,
     eliminarProducto,
     agregarProducto,
     saveCotizacion,
@@ -49,6 +70,7 @@ export default function ResumenCotizacionInner() {
 
   const [editCliente, setEditCliente] = useState(false);
   const nombreInputRef = useRef(null);
+  const editSnapshotRef = useRef(null);
 
   const [codigoDescuento, setCodigoDescuento] = useState("");
   const [descuentoAplicado, setDescuentoAplicado] = useState(null);
@@ -90,8 +112,9 @@ export default function ResumenCotizacionInner() {
   }, [vendedorAuth?.id_vendedor, vendedor?.id_vendedor]);
 
   const getEnvioDisplay = (envioState) => {
+    const envioMonto = parseMoneyInput(envioState?.monto);
     if (envioState?.modo === "monto_fijo") {
-      return `$${Number(envioState.monto || 0).toLocaleString("es-MX", {
+      return `$${Number(envioMonto || 0).toLocaleString("es-MX", {
         minimumFractionDigits: 2,
       })}`;
     }
@@ -100,8 +123,9 @@ export default function ResumenCotizacionInner() {
   };
 
   const getEnvioPreviewText = (envioState) => {
+    const envioMonto = parseMoneyInput(envioState?.monto);
     if (envioState?.modo === "monto_fijo") {
-      return `Monto: $${Number(envioState.monto || 0).toLocaleString("es-MX", {
+      return `Monto: $${Number(envioMonto || 0).toLocaleString("es-MX", {
         minimumFractionDigits: 2,
       })}`;
     }
@@ -132,7 +156,7 @@ export default function ResumenCotizacionInner() {
 
     return {
       modo,
-      monto: modo === "monto_fijo" ? costoEnvio : 0,
+      monto: modo === "monto_fijo" && costoEnvio > 0 ? formatMoneyInput(costoEnvio) : "",
     };
   };
 
@@ -250,13 +274,14 @@ export default function ResumenCotizacionInner() {
     if (!cotizacion) return;
 
     const nextMonto =
-      envio.modo === "monto_fijo" ? Number(envio.monto || 0) : 0;
+      envio.modo === "monto_fijo" ? parseMoneyInput(envio.monto) : 0;
 
     const prevEnvio = normalizeEnvioFromCotizacion(cotizacion);
+    const prevMonto = parseMoneyInput(prevEnvio.monto);
 
     if (
       prevEnvio.modo === envio.modo &&
-      Number(prevEnvio.monto || 0) === nextMonto
+      prevMonto === nextMonto
     ) {
       return;
     }
@@ -304,9 +329,10 @@ export default function ResumenCotizacionInner() {
   };
 
   const handleChangeEnvioModo = (modo) => {
+    const prevMonto = parseMoneyInput(envio?.monto);
     setEnvio((prev) => ({
       modo,
-      monto: modo === "monto_fijo" ? Number(prev.monto || 0) : 0,
+      monto: modo === "monto_fijo" && prevMonto > 0 ? formatMoneyInput(prevMonto) : "",
     }));
   };
 
@@ -314,7 +340,7 @@ export default function ResumenCotizacionInner() {
     setEnvio((prev) => ({
       ...prev,
       modo: "monto_fijo",
-      monto: Number(value || 0),
+      monto: formatMoneyInput(value),
     }));
   };
 
@@ -329,6 +355,13 @@ export default function ResumenCotizacionInner() {
       return;
     }
 
+    if (cotizacion) {
+      try {
+        editSnapshotRef.current = JSON.parse(JSON.stringify(cotizacion));
+      } catch {
+        editSnapshotRef.current = cotizacion;
+      }
+    }
     setIsEditing(true);
     setEditCliente(false);
   };
@@ -353,6 +386,7 @@ export default function ResumenCotizacionInner() {
 
       setIsEditing(false);
       setEditCliente(false);
+      editSnapshotRef.current = null;
       setModalInfo({
         title: "Guardado",
         body: "Cambios guardados correctamente.",
@@ -367,12 +401,16 @@ export default function ResumenCotizacionInner() {
   };
 
   const handleCancelEdit = () => {
-    setIsEditing(false);
-    setEditCliente(false);
-
-    if (cotizacion) {
+    if (editSnapshotRef.current) {
+      setCotizacion(editSnapshotRef.current);
+      setEnvio(normalizeEnvioFromCotizacion(editSnapshotRef.current));
+      editSnapshotRef.current = null;
+    } else if (cotizacion) {
       setEnvio(normalizeEnvioFromCotizacion(cotizacion));
     }
+
+    setIsEditing(false);
+    setEditCliente(false);
   };
 
   useEffect(() => {
@@ -443,10 +481,10 @@ export default function ResumenCotizacionInner() {
             Volver al catálogo
           </button>
 
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
             <div>
-              <h1 className="text-3xl font-bold mb-2">
-                Cotización #{cotizacion.numero_cotizacion || numeroCotizacion}
+              <h1 className="text-2xl md:text-3xl font-bold mb-2">
+                 # {cotizacion.numero_cotizacion || numeroCotizacion}
               </h1>
               <p className="text-gray-600">
                 {isEditing
@@ -459,7 +497,7 @@ export default function ResumenCotizacionInner() {
               <button
                 onClick={handleEntrarEdicion}
                 disabled={!isEditable}
-                className={`flex items-center gap-2 px-4 py-2 border-2 rounded transition-colors font-medium ${
+                className={`self-start md:self-auto flex items-center gap-2 px-4 py-2 border-2 rounded transition-colors font-medium ${
                   isEditable
                     ? "border-black hover:bg-gray-50"
                     : "border-gray-300 text-gray-400 cursor-not-allowed"
@@ -469,10 +507,10 @@ export default function ResumenCotizacionInner() {
                 Editar cotización
               </button>
             ) : (
-              <div className="flex gap-2">
+              <div className="self-start md:self-auto flex gap-2">
                 <button
                   onClick={handleCancelEdit}
-                  className="flex items-center gap-2 px-4 py-2 border-2 border-gray-300 rounded hover:bg-gray-50 transition-colors"
+                  className="flex items-center gap-2 px-4 py-2 border-2 border-black rounded hover:bg-gray-50 transition-colors"
                 >
                   <X className="w-4 h-4" />
                   Cancelar
@@ -512,109 +550,117 @@ export default function ResumenCotizacionInner() {
               </div>
 
               {isEditing && editCliente ? (
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <span className="text-gray-600">Nombre:</span>
-                    <input
-                      ref={nombreInputRef}
-                      type="text"
-                      value={cotizacion?.nombre_cliente ?? ""}
-                      onChange={(e) => onChangeCliente("nombre", e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") setEditCliente(false);
-                      }}
-                      className="mt-1 w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-black"
-                      placeholder="Nombre completo"
-                    />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+                  <div className="space-y-4">
+                    <div>
+                      <span className="text-gray-600">Nombre:</span>
+                      <input
+                        ref={nombreInputRef}
+                        type="text"
+                        value={cotizacion?.nombre_cliente ?? ""}
+                        onChange={(e) => onChangeCliente("nombre", e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") setEditCliente(false);
+                        }}
+                        className="mt-1 w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-black"
+                        placeholder="Nombre completo"
+                      />
+                    </div>
+
+                    <div>
+                      <span className="text-gray-600">Teléfono:</span>
+                      <input
+                        type="tel"
+                        value={cotizacion?.telefono_cliente ?? ""}
+                        onChange={(e) =>
+                          onChangeCliente("telefono", e.target.value)
+                        }
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") setEditCliente(false);
+                        }}
+                        className="mt-1 w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-black"
+                        placeholder="10 dígitos"
+                      />
+                    </div>
+
+                    <div>
+                      <span className="text-gray-600">Email:</span>
+                      <input
+                        type="email"
+                        value={cotizacion?.email_cliente ?? ""}
+                        onChange={(e) => onChangeCliente("email", e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") setEditCliente(false);
+                        }}
+                        className="mt-1 w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-black"
+                        placeholder="correo@ejemplo.com"
+                      />
+                    </div>
                   </div>
 
-                  <div>
-                    <span className="text-gray-600">Teléfono:</span>
-                    <input
-                      type="tel"
-                      value={cotizacion?.telefono_cliente ?? ""}
-                      onChange={(e) =>
-                        onChangeCliente("telefono", e.target.value)
-                      }
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") setEditCliente(false);
-                      }}
-                      className="mt-1 w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-black"
-                      placeholder="10 dígitos"
-                    />
-                  </div>
+                  <div className="space-y-4">
+                    <div>
+                      <span className="text-gray-600">Dirección:</span>
+                      <input
+                        type="text"
+                        value={cotizacion?.direccion ?? ""}
+                        onChange={(e) =>
+                          onChangeCliente("direccion", e.target.value)
+                        }
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") setEditCliente(false);
+                        }}
+                        className="mt-1 w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-black"
+                        placeholder="Calle, número, colonia..."
+                      />
+                    </div>
 
-                  <div>
-                    <span className="text-gray-600">Email:</span>
-                    <input
-                      type="email"
-                      value={cotizacion?.email_cliente ?? ""}
-                      onChange={(e) => onChangeCliente("email", e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") setEditCliente(false);
-                      }}
-                      className="mt-1 w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-black"
-                      placeholder="correo@ejemplo.com"
-                    />
-                  </div>
-
-                  <div>
-                    <span className="text-gray-600">Dirección:</span>
-                    <input
-                      type="text"
-                      value={cotizacion?.direccion ?? ""}
-                      onChange={(e) =>
-                        onChangeCliente("direccion", e.target.value)
-                      }
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") setEditCliente(false);
-                      }}
-                      className="mt-1 w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-black"
-                      placeholder="Calle, número, colonia..."
-                    />
-                  </div>
-
-                  <div className="col-span-2">
-                    <span className="text-gray-600">Comentarios:</span>
-                    <textarea
-                      rows={3}
-                      value={cotizacion?.comentarios ?? ""}
-                      onChange={(e) =>
-                        onChangeCliente("comentarios", e.target.value)
-                      }
-                      className="mt-1 w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-black"
-                      placeholder="Notas opcionales..."
-                    />
+                    <div>
+                      <span className="text-gray-600">Comentarios:</span>
+                      <textarea
+                        rows={3}
+                        value={cotizacion?.comentarios ?? ""}
+                        onChange={(e) =>
+                          onChangeCliente("comentarios", e.target.value)
+                        }
+                        className="mt-1 w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-black"
+                        placeholder="Notas opcionales..."
+                      />
+                    </div>
                   </div>
                 </div>
               ) : (
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <span className="text-gray-600">Nombre:</span>
-                    <p className="font-medium">{safe(cotizacion.nombre_cliente)}</p>
-                  </div>
-                  <div>
-                    <span className="text-gray-600">Teléfono:</span>
-                    <p className="font-medium">
-                      {safe(cotizacion.telefono_cliente)}
-                    </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+                  <div className="space-y-4">
+                    <div>
+                      <span className="text-gray-600">Nombre:</span>
+                      <p className="font-medium">{safe(cotizacion.nombre_cliente)}</p>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Teléfono:</span>
+                      <p className="font-medium">
+                        {safe(cotizacion.telefono_cliente)}
+                      </p>
+                    </div>
+
+                    <div>
+                      <span className="text-gray-600">Email:</span>
+                      <p className="font-medium">{safe(cotizacion.email_cliente)}</p>
+                    </div>
                   </div>
 
-                  <div>
-                    <span className="text-gray-600">Email:</span>
-                    <p className="font-medium">{safe(cotizacion.email_cliente)}</p>
-                  </div>
+                  <div className="space-y-4">
+                    <div>
+                      <span className="text-gray-600">Dirección:</span>
+                      <p className="font-medium">{cotizacion.direccion || "—"}</p>
+                    </div>
 
-                  <div>
-                    <span className="text-gray-600">Dirección:</span>
-                    <p className="font-medium">{cotizacion.direccion || "—"}</p>
-                  </div>
-
-                  <div className="col-span-2">
-                    <span className="text-gray-600">Comentarios:</span>
-                    <p className="font-medium">
-                      {safe(cotizacion.comentarios, "Sin comentarios")}
-                    </p>
+                    <div>
+                      <span className="text-gray-600">Comentarios:</span>
+                      <p className="font-medium">
+                        {safe(cotizacion.comentarios, "Sin comentarios")}
+                      </p>
+                    </div>
                   </div>
                 </div>
               )}
@@ -624,6 +670,7 @@ export default function ResumenCotizacionInner() {
               productos={cotizacion.productos || []}
               isEditing={isEditing}
               onUpdateQuantity={updateCantidad}
+              onUpdateNotaPersonalizable={updateNotaPersonalizable}
               onRemoveProduct={eliminarProducto}
               onOpenAddProductModal={() => setShowProductSelector(true)}
             />
@@ -676,13 +723,12 @@ export default function ResumenCotizacionInner() {
                         Monto de envío:
                       </label>
                       <input
-                        type="number"
+                        type="text"
+                        inputMode="decimal"
                         value={envio.monto}
                         onChange={(e) => handleChangeEnvioMonto(e.target.value)}
                         className="mt-1 w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-black"
                         placeholder="0.00"
-                        min="0"
-                        step="0.01"
                       />
                     </div>
                   )}

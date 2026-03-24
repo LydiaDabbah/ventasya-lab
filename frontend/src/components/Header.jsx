@@ -1,12 +1,18 @@
 "use client";
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import CartSheet from "@/components/CartSheet.jsx"
 import { useCart } from "@/context/CartContext.jsx"
 
 export default function Header() {
   const { totalItems } = useCart()
   const [isCartOpen, setIsCartOpen] = useState(false)
+
+  useEffect(() => {
+    const handleOpenCart = () => setIsCartOpen(true)
+    window.addEventListener("ventasya:open-cart", handleOpenCart)
+    return () => window.removeEventListener("ventasya:open-cart", handleOpenCart)
+  }, [])
 
   return (
     <>
@@ -24,7 +30,7 @@ export default function Header() {
             </div>
 
             {/* Navigation */}
-            <nav className="hidden md:flex items-center space-x-8">
+        {/*     <nav className="hidden md:flex items-center space-x-8">
               <a href="#home" className="text-black font-medium hover:text-gray-600 transition-colors">
                 Home
               </a>
@@ -50,7 +56,7 @@ export default function Header() {
               <a href="#contact" className="text-gray-600 hover:text-black transition-colors">
                 Contact
               </a>
-            </nav>
+            </nav> */}
 
             {/* Search and Cart */}
             <div className="flex items-center space-x-4">

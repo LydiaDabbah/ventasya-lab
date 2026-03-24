@@ -14,7 +14,6 @@ export default function ProductDetailPage() {
   const {
     addItem,
     updateQuantity,
-    getItemQuantity,
     updateNotaPersonalizable,
     getItemById,
   } = useCart();
@@ -27,6 +26,7 @@ export default function ProductDetailPage() {
   const [activeTab, setActiveTab] = useState(null);
   const [showGalleryModal, setShowGalleryModal] = useState(false);
   const [gallerySelectedImage, setGallerySelectedImage] = useState(0);
+  const [isCartActionAnimating, setIsCartActionAnimating] = useState(false);
 
   const idProd = useMemo(
     () => (producto?.id_producto ? String(producto.id_producto) : ""),
@@ -59,11 +59,6 @@ export default function ProductDetailPage() {
       }));
   }, [datosAdicionales]);
 
-  const cantidadEnCarrito = useMemo(() => {
-    if (!idProd) return 0;
-    return Number(getItemQuantity(idProd) || 0);
-  }, [getItemQuantity, idProd]);
-
   const itemEnCarrito = useMemo(() => {
     if (!idProd) return null;
     return getItemById(idProd);
@@ -88,17 +83,29 @@ export default function ProductDetailPage() {
   }, [idProd, itemEnCarrito]);
 
   useEffect(() => {
-    if (tabs.length === 0) {
-      setActiveTab(null);
-      return;
-    }
+    if (typeof window === "undefined") return;
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  }, [idProd]);
 
+  useEffect(() => {
     setActiveTab((prev) => {
+      if (tabs.length === 0) return null;
       const prevStillExists = tabs.some((tab) => tab.id === prev);
       if (prevStillExists) return prev;
       return tabs[0].id;
     });
   }, [tabs]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (loading) return;
+
+    const timer = setTimeout(() => {
+      window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    }, 0);
+
+    return () => clearTimeout(timer);
+  }, [idProd, loading]);
 
   useEffect(() => {
     const handleKeyDown = (event) => {
@@ -185,9 +192,17 @@ export default function ProductDetailPage() {
   };
 
   const handleQuantityBlur = () => {
-    if (quantity === "" || Number(quantity) < 1) {
-      setQuantity(1);
+    const normalized = quantity === "" || Number(quantity) < 1 ? 1 : Math.min(99, Number(quantity));
+    setQuantity(normalized);
+  };
+
+  const triggerCartFeedback = () => {
+    setIsCartActionAnimating(true);
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("ventasya:open-cart"));
     }
+
+    setTimeout(() => setIsCartActionAnimating(false), 220);
   };
 
   const renderTabContent = (tabId) => {
@@ -216,6 +231,7 @@ export default function ProductDetailPage() {
 
     const target = Math.max(1, Number(quantity || 1));
     const clean = (notaPersonalizada ?? "").trim();
+    const wasInCart = Boolean(itemEnCarrito);
 
     if (itemEnCarrito) {
       updateQuantity(idProd, target);
@@ -226,6 +242,7 @@ export default function ProductDetailPage() {
         updateNotaPersonalizable(idProd, null);
       }
 
+      triggerCartFeedback();
       return;
     }
 
@@ -244,6 +261,8 @@ export default function ProductDetailPage() {
     } else {
       updateNotaPersonalizable(idProd, null);
     }
+
+    triggerCartFeedback();
   };
 
   if (loading) {
@@ -359,11 +378,7 @@ export default function ProductDetailPage() {
               </span>
             </div>
 
-            {cantidadEnCarrito > 0 && (
-              <p className="text-sm text-gray-500">
-                Ya tienes {cantidadEnCarrito} en tu carrito
-              </p>
-            )}
+          
 
             {personalizable && (
               <div>
@@ -375,14 +390,7 @@ export default function ProductDetailPage() {
                 </label>
                 <textarea
                   value={notaPersonalizada}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    setNotaPersonalizada(value);
-
-                    if (itemEnCarrito && personalizable) {
-                      updateNotaPersonalizable(idProd, value);
-                    }
-                  }}
+                  onChange={(e) => setNotaPersonalizada(e.target.value)}
                   placeholder="Ej: Color rosa, agregar nombre, sin cebolla, etc."
                   rows={2}
                   maxLength={150}
@@ -467,9 +475,11 @@ export default function ProductDetailPage() {
               <button
                 type="button"
                 onClick={handleAddToCart}
-                className="w-full bg-black text-white px-6 py-3 rounded-md font-medium text-sm hover:bg-gray-800 transition-colors"
+                className={`w-full bg-black text-white px-6 py-3 rounded-md font-medium text-sm hover:bg-gray-800 transition-all ${
+                  isCartActionAnimating ? "scale-[0.99]" : "scale-100"
+                }`}
               >
-                {cantidadEnCarrito > 0 ? "Actualizar carrito" : "Agregar al carrito"}
+                {itemEnCarrito ? "Actualizar carrito" : "Agregar al carrito"}
               </button>
             </div>
           </div>

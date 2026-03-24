@@ -60,7 +60,9 @@ export default function CardProducto({ producto, variant = "cart" }) {
   return (
     <div
       onClick={() => {
-        if (clave && producto?.slug) router.push(`/${clave}/productos/${producto.slug}`);
+        if (clave && producto?.slug) {
+          router.push(`/${clave}/productos/${producto.slug}`, { scroll: true });
+        }
       }}
       className="group cursor-pointer"
     >
@@ -85,7 +87,7 @@ export default function CardProducto({ producto, variant = "cart" }) {
 
       {/* Información */}
       <div className="space-y-1">
-        <h3 className="text-xl font-bold text-black leading-tight group-hover:text-gray-700 transition-colors">
+        <h3 className="text-lg font-bold text-black leading-tight group-hover:text-gray-700 transition-colors">
           {producto?.nombre}
         </h3>
 

@@ -31,7 +31,7 @@ export function CotizacionClienteForm({ cliente, onChangeCliente, errores, setEr
             type="text"
             value={cliente.nombre}
             onChange={(e) => handleChange("nombre", e.target.value)}
-            className={`w-full px-4 py-2 border rounded focus:outline-none focus:ring-2 ${
+            className={`w-full px-4 py-2.5 text-sm border rounded focus:outline-none focus:ring-2 placeholder:text-gray-400 ${
               errores.nombre
                 ? "border-red-500 focus:ring-red-400"
                 : "border-gray-300 focus:ring-black"
@@ -52,7 +52,7 @@ export function CotizacionClienteForm({ cliente, onChangeCliente, errores, setEr
             type="tel"
             value={cliente.telefono}
             onChange={(e) => handleChange("telefono", e.target.value)}
-            className={`w-full px-4 py-2 border rounded focus:outline-none focus:ring-2 ${
+            className={`w-full px-4 py-2.5 text-sm border rounded focus:outline-none focus:ring-2 placeholder:text-gray-400 ${
               errores.telefono
                 ? "border-red-500 focus:ring-red-400"
                 : "border-gray-300 focus:ring-black"
@@ -73,7 +73,7 @@ export function CotizacionClienteForm({ cliente, onChangeCliente, errores, setEr
             type="email"
             value={cliente.email}
             onChange={(e) => handleChange("email", e.target.value)}
-            className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-black"
+            className="w-full px-4 py-2.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-black placeholder:text-gray-400"
             placeholder="correo@ejemplo.com"
           />
         </div>
@@ -86,7 +86,7 @@ export function CotizacionClienteForm({ cliente, onChangeCliente, errores, setEr
           <textarea
             value={cliente.direccion}
             onChange={(e) => handleChange("direccion", e.target.value)}
-            className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-black"
+            className="w-full px-4 py-2.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-black placeholder:text-gray-400"
             rows={3}
             placeholder="Calle, número, colonia, ciudad..."
           />
@@ -100,7 +100,7 @@ export function CotizacionClienteForm({ cliente, onChangeCliente, errores, setEr
           <textarea
             value={cliente.comentarios}
             onChange={(e) => handleChange("comentarios", e.target.value)}
-            className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-black"
+            className="w-full px-4 py-2.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-black placeholder:text-gray-400"
             rows={3}
             placeholder="Información adicional sobre la cotización..."
           />

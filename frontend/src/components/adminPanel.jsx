@@ -4,8 +4,7 @@ import AdminHeader from "./adminHeader"
 import AdminSidebar from "./adminSidebar"
 import AdminContent from "./adminContent"
 
-export default function AdminPanel() {
-  const [activeSection, setActiveSection] = useState("dashboard")
+export default function AdminPanel({ activeSection = "dashboard" }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     if (typeof window !== "undefined") {
       const saved = localStorage.getItem("sidebarCollapsed")
@@ -39,7 +38,6 @@ export default function AdminPanel() {
     <div className="min-h-screen bg-gray-50 flex">
       <AdminSidebar
         activeSection={activeSection}
-        setActiveSection={setActiveSection}
         sidebarCollapsed={sidebarCollapsed}
         setSidebarCollapsed={handleToggleSidebar}
         showMobileSidebar={showMobileSidebar}

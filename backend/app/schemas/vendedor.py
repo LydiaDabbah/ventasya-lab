@@ -1,8 +1,9 @@
-# app/schemas/vendedor.py
-from pydantic import BaseModel, EmailStr, Field, ConfigDict
-from typing import Optional
-from uuid import UUID
 from datetime import datetime
+from uuid import UUID
+
+from pydantic import BaseModel, EmailStr, Field, ConfigDict, field_validator
+
+from app.enums.moneda import MonedaEnum
 
 
 class VendedorCreate(BaseModel):
@@ -10,8 +11,17 @@ class VendedorCreate(BaseModel):
     telefono: str
     email: EmailStr
     nombre_negocio: str
-    clave: str = Field(..., min_length=3, strip_whitespace=True)
-    password: str  # ⚠️ solo se usa en entrada, no se guarda
+    clave: str = Field(..., min_length=3)
+    moneda: MonedaEnum = MonedaEnum.MXN
+    password: str  # solo entrada
+
+    @field_validator("clave")
+    @classmethod
+    def normalizar_clave(cls, value: str) -> str:
+        value = (value or "").strip().lower()
+        if len(value) < 3:
+            raise ValueError("La clave debe tener al menos 3 caracteres")
+        return value
 
 
 class VendedorLogin(BaseModel):
@@ -32,9 +42,9 @@ class VendedorOut(BaseModel):
     email: EmailStr
     nombre_negocio: str
     clave: str
+    moneda: MonedaEnum
     activo: bool
     created_at: datetime
     updated_at: datetime
 
-    # Pydantic v2
     model_config = ConfigDict(from_attributes=True)

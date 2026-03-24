@@ -1,208 +1,285 @@
-// utils/generarPDFCotizacion.js
 import { jsPDF } from "jspdf";
 
-export function generarPDFCotizacion({ cotizacion, subtotal, total, vendedor = {} }) {
+export async function generarPDFCotizacion({
+  cotizacion,
+  subtotal,
+  total,
+  vendedor = {},
+  cotizacionUrl = "",
+}) {
   const doc = new jsPDF({ unit: "pt", format: "a4" });
-  const PAGE_W = 595.28;
-  const PAGE_H = 841.89;
-  const MARGIN = 48;
-  const CONTENT_W = PAGE_W - MARGIN * 2;
+  const PAGE_W = doc.internal.pageSize.getWidth();
+  const PAGE_H = doc.internal.pageSize.getHeight();
 
-  const BLACK   = [15, 15, 15];
-  const GRAY_DK = [80, 80, 80];
-  const GRAY_MD = [130, 130, 130];
-  const GRAY_LT = [220, 220, 220];
-  const WHITE   = [255, 255, 255];
+  const M = 50;
+  const IW = PAGE_W - M * 2;
+  const FOOTER_Y = PAGE_H - 28;
+  const CONTENT_BOTTOM = PAGE_H - 80;
 
-  const setColor = (rgb) => doc.setTextColor(...rgb);
-  const setFill  = (rgb) => doc.setFillColor(...rgb);
-  const setDraw  = (rgb) => doc.setDrawColor(...rgb);
-  const fmt      = (n)   => `$${Number(n || 0).toLocaleString("es-MX", { minimumFractionDigits: 2 })}`;
-  const safe     = (v, fb = "—") => (v || v === 0 ? String(v) : fb);
+  const C = {
+    black: [20, 20, 20],
+    white: [255, 255, 255],
+    text: [30, 30, 30],
+    darkGray: [90, 90, 90],
+    midGray: [120, 120, 120],
+    lightGray: [210, 210, 210],
+    accent: [20, 20, 20],
+  };
+
+  const fmt = (n) =>
+    `$${Number(n || 0).toLocaleString("es-MX", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
+  const safe = (v, fb = "—") => (v || v === 0 ? String(v) : fb);
+  const getComentarioCotizacion = (cot) =>
+    cot?.comentarios ?? cot?.comentario ?? cot?.notas ?? cot?.nota ?? null;
+  const getNotaProducto = (item) =>
+    item?.nota_personalizable ?? item?.nota ?? item?.comentario ?? item?.observaciones ?? null;
+
+  const fecha = new Date().toLocaleDateString("es-MX", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+
+  const numero = safe(cotizacion?.numero_cotizacion || cotizacion?.numero_orden, "—");
+  const tienda = vendedor?.nombre_tienda || vendedor?.nombre_negocio || vendedor?.nombre || "Mi Tienda";
+  const vendedorNombre = vendedor?.nombre || vendedor?.nombre_vendedor || "";
+  const vendedorEmail = vendedor?.email || vendedor?.correo || "";
+  const vendedorTel = vendedor?.telefono_whatsapp || vendedor?.telefono || "";
+  const comentarioCotizacion = String(getComentarioCotizacion(cotizacion) || "").trim() || "Sin comentarios";
 
   let y = 0;
 
-  // ── HEADER ──────────────────────────────────────────────────────
-  setFill(BLACK);
-  doc.rect(0, 0, PAGE_W, 80, "F");
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(22);
-  setColor(WHITE);
-  doc.text(vendedor?.nombre_tienda || vendedor?.nombre || "Mi Tienda", MARGIN, 50);
-  doc.setFontSize(10);
-  doc.setFont("helvetica", "normal");
-  doc.text("COTIZACIÓN", PAGE_W - MARGIN, 38, { align: "right" });
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(14);
-  const numCot = cotizacion?.numero_cotizacion || "—";
-  doc.text(`#${numCot}`, PAGE_W - MARGIN, 57, { align: "right" });
-
-  y = 100;
-
-  // ── DATE ROW ─────────────────────────────────────────────────────
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(9);
-  setColor(GRAY_MD);
-  const today = new Date().toLocaleDateString("es-MX", { year: "numeric", month: "long", day: "numeric" });
-  doc.text(`Fecha: ${today}`, MARGIN, y);
-  doc.text(`Estado: ${cotizacion?.estado || "Pendiente"}`, PAGE_W - MARGIN, y, { align: "right" });
-  y += 28;
-
-  // ── INFO BOXES ────────────────────────────────────────────────────
-  const colW = (CONTENT_W - 24) / 2;
-
-  const drawInfoBox = (x, w, title, rows) => {
-    const boxH = 20 + rows.length * 20 + 14;
-    setFill([248, 248, 248]);
-    setDraw(GRAY_LT);
-    doc.setLineWidth(0.5);
-    doc.roundedRect(x, y, w, boxH, 4, 4, "FD");
-    setFill([235, 235, 235]);
-    doc.roundedRect(x, y, w, 22, 4, 4, "F");
-    doc.rect(x, y + 10, w, 12, "F");
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(9);
-    setColor(BLACK);
-    doc.text(title, x + 12, y + 15);
-    let rowY = y + 34;
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
-    rows.forEach(([label, value]) => {
-      setColor(GRAY_MD);
-      doc.text(label, x + 12, rowY);
-      setColor(BLACK);
-      doc.text(safe(value), x + 84, rowY);
-      rowY += 20;
-    });
-    return boxH;
+  const text = (str, x, yy, { size = 9, color = C.text, style = "normal" } = {}) => {
+    doc.setFont("helvetica", style);
+    doc.setFontSize(size);
+    doc.setTextColor(...color);
+    doc.text(String(str), x, yy);
   };
 
-  const h1 = drawInfoBox(MARGIN, colW, "DATOS DEL CLIENTE", [
-    ["Nombre:",    cotizacion?.nombre_cliente],
-    ["Teléfono:",  cotizacion?.telefono_cliente],
-    ["Email:",     cotizacion?.email_cliente],
-    ["Dirección:", cotizacion?.direccion],
-  ]);
-  drawInfoBox(MARGIN + colW + 24, colW, "DATOS DEL VENDEDOR", [
-    ["Vendedor:", vendedor?.nombre || vendedor?.nombre_vendedor],
-    ["Teléfono:", vendedor?.telefono_whatsapp || vendedor?.telefono],
-    ["Email:",    vendedor?.email],
-  ]);
-  y += h1 + 24;
-
-  if (cotizacion?.comentarios) {
-    doc.setFont("helvetica", "italic");
-    doc.setFontSize(9);
-    setColor(GRAY_MD);
-    doc.text(`Notas: ${cotizacion.comentarios}`, MARGIN, y);
-    y += 20;
-  }
-
-  // ── PRODUCTS TABLE ─────────────────────────────────────────────────
-  const C = {
-    num:   MARGIN,
-    name:  MARGIN + 28,
-    price: MARGIN + 248,
-    qty:   MARGIN + 360,
-    sub:   MARGIN + 420,
-    subW:  CONTENT_W - 420,
+  const textRight = (str, rightX, yy, opts = {}) => {
+    doc.setFont("helvetica", opts.style || "normal");
+    doc.setFontSize(opts.size || 9);
+    doc.setTextColor(...(opts.color || C.text));
+    doc.text(String(str), rightX, yy, { align: "right" });
   };
 
-  setFill(BLACK);
-  doc.rect(MARGIN, y, CONTENT_W, 22, "F");
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(9);
-  setColor(WHITE);
-  doc.text("#",           C.num + 8,  y + 15);
-  doc.text("PRODUCTO",    C.name + 4, y + 15);
-  doc.text("P. UNITARIO", C.price + 4,y + 15);
-  doc.text("CANT.",       C.qty + 4,  y + 15);
-  doc.text("SUBTOTAL",    C.sub + C.subW - 8, y + 15, { align: "right" });
-  y += 22;
-
-  (cotizacion?.productos || []).forEach((item, idx) => {
-    const rowH = 36;
-    setFill(idx % 2 === 0 ? WHITE : [248, 249, 250]);
-    doc.rect(MARGIN, y, CONTENT_W, rowH, "F");
-    setDraw(GRAY_LT);
-    doc.setLineWidth(0.4);
-    doc.line(MARGIN, y + rowH, MARGIN + CONTENT_W, y + rowH);
-    const midY = y + 22;
-
+  // Letter-spacing simulado — solo para labels en mayúsculas (FOLIO, FECHA, CLIENTE, headers tabla)
+  const textSpaced = (str, x, yy, { size = 7, color = C.midGray, spacing = 0.6 } = {}) => {
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
-    setColor(GRAY_MD);
-    doc.text(String(idx + 1), C.num + 8, midY);
-
-    setColor(BLACK);
-    doc.setFont("helvetica", "bold");
-    let name = item.nombre_producto || "Producto";
-    const maxW = 212;
-    if (doc.getTextWidth(name) > maxW) {
-      while (doc.getTextWidth(name + "…") > maxW && name.length > 0) name = name.slice(0, -1);
-      name += "…";
+    doc.setFontSize(size);
+    doc.setTextColor(...color);
+    let cx = x;
+    for (const ch of String(str)) {
+      doc.text(ch, cx, yy);
+      cx += doc.getTextWidth(ch) + spacing;
     }
-    doc.text(name, C.name + 4, midY);
+    return cx - spacing; // retorna x final
+  };
 
+  const textSpacedRight = (str, rightX, yy, { size = 7, color = C.midGray, spacing = 0.6 } = {}) => {
     doc.setFont("helvetica", "normal");
-    setColor(GRAY_DK);
-    doc.text(fmt(item.precio_unitario), C.price + 100, midY, { align: "right" });
-    doc.text(String(item.cantidad || 0), C.qty + 52,  midY, { align: "right" });
-    setColor(BLACK);
-    doc.setFont("helvetica", "bold");
-    doc.text(fmt(item.subtotal), C.sub + C.subW - 8, midY, { align: "right" });
-    y += rowH;
+    doc.setFontSize(size);
+    doc.setTextColor(...color);
+    let totalW = 0;
+    for (const ch of String(str)) totalW += doc.getTextWidth(ch) + spacing;
+    totalW -= spacing;
+    let cx = rightX - totalW;
+    for (const ch of String(str)) {
+      doc.text(ch, cx, yy);
+      cx += doc.getTextWidth(ch) + spacing;
+    }
+  };
+
+  const line = (x1, yy, x2, { color = C.lightGray, thickness = 0.5 } = {}) => {
+    doc.setDrawColor(...color);
+    doc.setLineWidth(thickness);
+    doc.line(x1, yy, x2, yy);
+  };
+
+  // ─── FOOTER ───────────────────────────────────────────────────────────────
+  const drawFooterOnCurrentPage = () => {
+    line(M, FOOTER_Y - 20, PAGE_W - M, { color: C.lightGray, thickness: 0.5 });
+    text("Este documento es una cotización, no una factura fiscal.", M, FOOTER_Y - 8, { size: 7, color: C.midGray });
+    text("Los precios pueden cambiar sin previo aviso.", M, FOOTER_Y, { size: 7, color: C.midGray });
+    textRight(tienda, PAGE_W - M, FOOTER_Y - 8, { size: 8, color: C.text, style: "bold" });
+    const contactParts = [];
+    if (vendedorEmail) contactParts.push(vendedorEmail);
+    if (vendedorTel) contactParts.push(`WhatsApp: ${vendedorTel}`);
+    if (cotizacionUrl) contactParts.push(cotizacionUrl);
+    textRight(contactParts.join("  |  "), PAGE_W - M, FOOTER_Y, { size: 7, color: C.midGray });
+  };
+
+  const ensureSpace = (needed, drawTableHeader = null) => {
+    if (y + needed <= CONTENT_BOTTOM) return;
+    doc.addPage();
+    y = M;
+    if (drawTableHeader) drawTableHeader();
+  };
+
+  // ─── ENCABEZADO ───────────────────────────────────────────────────────────
+  // baseline compartido: nombre tienda, contacto, folio y fecha alineados juntos
+  const nameY = 68;       // baseline nombre tienda
+  const contactY = 83;    // baseline línea de contacto (WhatsApp, email)
+
+  // Nombre tienda
+  text(tienda, M, nameY, { style: "bold", size: 18, color: C.text });
+
+  // Contacto — mismo baseline que folio/fecha value
+  const contactLine = [vendedorEmail, vendedorTel ? `WhatsApp ${vendedorTel}` : ""].filter(Boolean).join(" · ");
+  if (contactLine) text(contactLine, M, contactY, { size: 8, color: C.midGray });
+
+  // Divisor vertical alineado entre folio y fecha
+  const dividerX = PAGE_W - M - 85;
+  doc.setDrawColor(...C.lightGray);
+  doc.setLineWidth(0.5);
+  doc.line(dividerX, nameY - 14, dividerX, contactY + 2);
+
+  // FOLIO — etiqueta spaced arriba, valor en contactY (alineado con WhatsApp)
+  textSpacedRight("FOLIO", dividerX - 16, nameY - 4, { size: 7, color: C.midGray, spacing: 0.6 });
+  textRight(`# ${numero}`, dividerX - 16, contactY, { style: "bold", size: 9, color: C.text });
+
+  // FECHA — etiqueta spaced arriba, valor en contactY (alineado con WhatsApp)
+  textSpaced("FECHA", dividerX + 12, nameY - 4, { size: 7, color: C.midGray, spacing: 0.6 });
+  text(fecha, dividerX + 12, contactY, { size: 9, color: C.text });
+
+  // Línea negra bajo encabezado
+  y = contactY + 16;
+  line(M, y, PAGE_W - M, { color: C.black, thickness: 1.2 });
+  y += 26;
+
+  // ─── CLIENTE ──────────────────────────────────────────────────────────────
+  textSpaced("CLIENTE", M, y, { size: 7, color: C.midGray, spacing: 0.6 });
+  y += 15;
+
+  const colL = M;
+  const colR = M + IW / 2 + 10;
+  const labelSize = 7;
+  const valueSize = 9;
+  const rowGap = 26;
+
+  // Fila 1: Nombre | Dirección
+  text("Nombre", colL, y, { size: labelSize, color: C.midGray });
+  text("Dirección", colR, y, { size: labelSize, color: C.midGray });
+  y += 12;
+  text(safe(cotizacion?.cliente?.nombre || cotizacion?.nombre_cliente), colL, y, { size: valueSize });
+  const direccion = safe(cotizacion?.cliente?.direccion || cotizacion?.direccion);
+  const dirLines = doc.splitTextToSize(direccion, IW / 2 - 20);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(valueSize);
+  doc.setTextColor(...C.darkGray);
+  doc.text(dirLines, colR, y);
+  y += rowGap;
+
+  // Fila 2: Teléfono | Comentarios
+  text("Teléfono", colL, y, { size: labelSize, color: C.midGray });
+  text("Comentarios", colR, y, { size: labelSize, color: C.midGray });
+  y += 12;
+  text(safe(cotizacion?.cliente?.telefono || cotizacion?.telefono_cliente), colL, y, { size: valueSize });
+  const comentarioLines = doc.splitTextToSize(comentarioCotizacion, IW / 2 - 20);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(valueSize);
+  doc.setTextColor(...C.darkGray);
+  doc.text(comentarioLines.slice(0, 2), colR, y);
+  y += rowGap;
+
+  // Fila 3: Email
+  text("Email", colL, y, { size: labelSize, color: C.midGray });
+  y += 12;
+  text(safe(cotizacion?.cliente?.email || cotizacion?.email_cliente), colL, y, { size: valueSize, color: C.darkGray });
+  y += rowGap + 14;
+
+  // ─── TABLA PRODUCTOS ──────────────────────────────────────────────────────
+  const cols = {
+    producto: M,
+    precio: M + IW - 150,
+    cantidad: M + IW - 80,
+    total: M + IW,
+  };
+
+  const drawProductsHeader = () => {
+    // headers con letter-spacing sutil
+    textSpaced("Producto", cols.producto, y, { size: 8, color: C.midGray, spacing: 0.5 });
+    textSpacedRight("Precio unit.", cols.precio + 55, y, { size: 8, color: C.midGray, spacing: 0.5 });
+    textSpacedRight("Cant.", cols.cantidad + 15, y, { size: 8, color: C.midGray, spacing: 0.5 });
+    textSpacedRight("Subtotal", cols.total, y, { size: 8, color: C.midGray, spacing: 0.5 });
+    y += 7;
+    line(M, y, PAGE_W - M, { color: C.black, thickness: 1.2 });
+    y += 16;
+  };
+
+  drawProductsHeader();
+
+  let subtotalCalc = 0;
+  (cotizacion?.productos || []).forEach((p) => {
+    const precio = Number(p?.precio_unitario || 0);
+    const cantidad = Number(p?.cantidad || 0);
+    const subtotalRow = Number(p?.subtotal ?? precio * cantidad);
+    subtotalCalc += subtotalRow;
+
+    const nota = String(getNotaProducto(p) || "").trim();
+    const need = nota ? 44 : 30;
+    ensureSpace(need, drawProductsHeader);
+
+    const nombreBase = p?.nombre_producto || p?.nombre || "Producto";
+    const nombreCorto = String(nombreBase).length > 42 ? `${String(nombreBase).substring(0, 42)}...` : String(nombreBase);
+
+    text(nombreCorto, cols.producto, y, { size: 9 });
+    textRight(fmt(precio), cols.precio + 55, y, { size: 9, color: C.darkGray });
+    textRight(String(cantidad), cols.cantidad + 15, y, { size: 9, color: C.darkGray });
+    textRight(fmt(subtotalRow), cols.total, y, { size: 9, style: "bold" });
+
+    if (nota) {
+      y += 14;
+      text(`Nota: ${nota}`, cols.producto, y, { size: 8, color: C.midGray });
+    }
+
+    y += 12;
+    line(M, y, PAGE_W - M, { color: C.lightGray, thickness: 0.5 });
+    y += 14;
   });
 
-  y += 16;
+  // ─── TOTALES ──────────────────────────────────────────────────────────────
+  ensureSpace(100);
+  y += 12;
 
-  // ── TOTALS ────────────────────────────────────────────────────────
-  const TW = 220;
-  const TX = PAGE_W - MARGIN - TW;
-  const LH = 22;
+  const tx = PAGE_W - M - 150;
+  const vx = PAGE_W - M;
+  const totalRowH = 20;
 
-  const drawTotalRow = (label, value, highlight = false) => {
-    if (highlight) {
-      setFill(BLACK);
-      doc.rect(TX, y, TW, LH + 4, "F");
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(12);
-      setColor(WHITE);
-      doc.text(label, TX + 12, y + LH - 2);
-      doc.text(value, TX + TW - 8, y + LH - 2, { align: "right" });
-      y += LH + 4;
-    } else {
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(9);
-      setColor(GRAY_DK);
-      doc.text(label, TX + 12, y + LH - 6);
-      doc.text(value, TX + TW - 8, y + LH - 6, { align: "right" });
-      setDraw(GRAY_LT);
-      doc.setLineWidth(0.3);
-      doc.line(TX, y + LH, TX + TW, y + LH);
-      y += LH;
-    }
+  const descuento = Number(cotizacion?.descuento_aplicado || cotizacion?.descuento?.monto || 0);
+  const subtotalVal = Number(subtotal ?? subtotalCalc);
+  const envioVal =
+    cotizacion?.envio?.modo === "monto" || Number(cotizacion?.costo_envio || 0) > 0
+      ? fmt(cotizacion?.envio?.monto || cotizacion?.costo_envio || 0)
+      : cotizacion?.envio?.modo === "incluido"
+        ? "Incluido"
+        : "Por definir";
+  const totalVal = Number(total ?? subtotalVal - descuento + Number(cotizacion?.costo_envio || 0));
+
+  const drawTotalRow = (label, value, { bold = false } = {}) => {
+    textRight(label, tx + 70, y, { style: "normal", size: 9, color: C.midGray });
+    textRight(value, vx, y, { style: bold ? "bold" : "normal", size: bold ? 10 : 9, color: C.text });
+    y += totalRowH;
   };
 
-  drawTotalRow("Subtotal", fmt(subtotal));
-  if (Number(cotizacion?.descuento_aplicado || 0) > 0)
-    drawTotalRow("Descuento", `-${fmt(cotizacion.descuento_aplicado)}`);
-  const envioMonto = cotizacion?.envio?.monto || cotizacion?.costo_envio;
-  drawTotalRow("Envío",
-    cotizacion?.envio?.modo === "monto" || envioMonto ? fmt(envioMonto)
-    : cotizacion?.envio?.modo === "incluido" ? "Incluido" : "Por definir"
-  );
-  y += 6;
-  drawTotalRow("TOTAL", fmt(total), true);
+  drawTotalRow("Subtotal:", fmt(subtotalVal));
+  if (descuento > 0) drawTotalRow("Descuento:", `-${fmt(descuento)}`);
+  drawTotalRow("Envío:", envioVal);
 
-  // ── FOOTER ────────────────────────────────────────────────────────
-  setFill([245, 245, 245]);
-  doc.rect(0, PAGE_H - 48, PAGE_W, 48, "F");
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8);
-  setColor(GRAY_MD);
-  doc.text("Este documento es una cotización y no constituye una factura oficial.", PAGE_W / 2, PAGE_H - 28, { align: "center" });
-  doc.text(`Generado el ${today}`, PAGE_W / 2, PAGE_H - 14, { align: "center" });
+  y += 4;
+  line(tx + 30, y, vx, { color: C.black, thickness: 0.8 });
+  y += 16;
+  drawTotalRow("Total:", fmt(totalVal), { bold: true });
 
-  doc.save(`Cotizacion-${numCot}.pdf`);
+  // ─── FOOTER EN TODAS LAS PÁGINAS ──────────────────────────────────────────
+  const pages = doc.getNumberOfPages();
+  for (let i = 1; i <= pages; i++) {
+    doc.setPage(i);
+    drawFooterOnCurrentPage();
+  }
+
+  doc.save(`Cotizacion-${numero}.pdf`);
 }

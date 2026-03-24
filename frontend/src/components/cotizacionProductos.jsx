@@ -7,31 +7,93 @@ export default function CotizacionProductos({
   productos = [],
   isEditing = false,
   onUpdateQuantity = () => {},
+  onUpdateNotaPersonalizable = () => {},
   onRemoveProduct = () => {},
   onOpenAddProductModal = () => {},
 }) {
-  return (
-    <div className="bg-white rounded-lg shadow p-6">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-xl font-semibold">Productos</h2>
-        {isEditing && (
-          <button
-            onClick={onOpenAddProductModal}
-            className="flex items-center gap-2 px-3 py-1.5 text-sm bg-black text-white rounded hover:bg-gray-800 transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-            Agregar producto
-          </button>
-        )}
-      </div>
+  const [noteDraftById, setNoteDraftById] = React.useState({});
+  const [editingNoteId, setEditingNoteId] = React.useState(null);
 
-      <div className="space-y-4">
-        {(productos || []).map((item) => (
-          <div
-            key={String(item.id_producto)}
-            className="flex gap-4 pb-4 border-b last:border-0"
-          >
-            <div className="relative w-20 h-20 flex-shrink-0">
+  React.useEffect(() => {
+    if (!isEditing) return;
+    const next = {};
+    (productos || []).forEach((item) => {
+      next[String(item.id_producto)] = item.nota_personalizable ?? "";
+    });
+    setNoteDraftById(next);
+  }, [isEditing, productos]);
+
+  const openNoteEditor = (item) => {
+    const id = String(item.id_producto);
+    setEditingNoteId(id);
+    setNoteDraftById((prev) => ({
+      ...prev,
+      [id]: prev[id] ?? item.nota_personalizable ?? "",
+    }));
+  };
+
+  const saveAndCloseNoteEditor = (item) => {
+    const id = String(item.id_producto);
+    onUpdateNotaPersonalizable(item.id_producto, noteDraftById[id] ?? "");
+    setEditingNoteId(null);
+  };
+
+  const handleCantidadChange = (idProducto, value) => {
+    if (value === "") {
+      onUpdateQuantity(idProducto, 1);
+      return;
+    }
+
+    if (!/^\d+$/.test(value)) return;
+
+    const numericValue = Number(value);
+    if (numericValue > 99) {
+      onUpdateQuantity(idProducto, 99);
+      return;
+    }
+
+    if (numericValue < 1) {
+      onUpdateQuantity(idProducto, 1);
+      return;
+    }
+
+    onUpdateQuantity(idProducto, numericValue);
+  };
+
+  const handleCantidadBlur = (idProducto, cantidadActual) => {
+    if (cantidadActual === "" || Number(cantidadActual) < 1) {
+      onUpdateQuantity(idProducto, 1);
+    }
+  };
+
+  return (
+    <div>
+      <div className="bg-white rounded-lg shadow">
+        <div className="flex items-center justify-between p-6 pb-6">
+          <h2 className="text-xl font-semibold ">Productos</h2>
+          {isEditing && (
+            <button
+              onClick={onOpenAddProductModal}
+              className="flex items-center gap-2 px-3 py-1.5 text-sm bg-black text-white rounded hover:bg-gray-800 transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              Agregar producto
+            </button>
+          )}
+        </div>
+
+        <div className="px-6 pb-6">
+          <div className="space-y-4">
+        {(productos || []).map((item) => {
+          const hasNota = Boolean(item.nota_personalizable?.trim());
+          const canHaveNota = item.personalizable === true || hasNota;
+
+          return (
+            <div
+              key={String(item.id_producto)}
+              className="flex gap-4 py-4 border-b first:pt-0 last:pb-0 last:border-0"
+            >
+            <div className="relative w-16 h-16 sm:w-20 sm:h-20 flex-shrink-0">
               <img
                 src={item.imagen_url || "/placeholder.svg"}
                 alt={item.nombre_producto || "Producto"}
@@ -66,48 +128,140 @@ export default function CotizacionProductos({
               </p>
 
               {isEditing ? (
-                <div className="flex items-center gap-2 text-sm">
-                  <label className="text-gray-600">Cantidad:</label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={item.cantidad}
-                    onChange={(e) =>
-                      onUpdateQuantity(
-                        item.id_producto,
-                        parseInt(e.target.value || "1", 10)
-                      )
-                    }
-                    className="w-20 px-2 py-1 border border-gray-300 rounded text-center font-medium focus:outline-none focus:ring-2 focus:ring-black"
-                  />
+                <div className="space-y-2">
+                  <div className="flex items-center mt-1">
+                    <button
+                      onClick={() => {
+                        const cantidadActual = Number(item.cantidad || 0);
+                        if (cantidadActual <= 1) {
+                          onRemoveProduct(item.id_producto);
+                        } else {
+                          onUpdateQuantity(item.id_producto, cantidadActual - 1);
+                        }
+                      }}
+                      className={`w-7 h-7 flex items-center justify-center rounded transition-colors ${
+                        Number(item.cantidad) === 1
+                          ? "border border-gray-300 hover:bg-gray-100"
+                          : "bg-gray-100 hover:bg-gray-200 text-gray-700"
+                      }`}
+                      title={Number(item.cantidad) === 1 ? "Eliminar producto" : "Reducir cantidad"}
+                    >
+                      {Number(item.cantidad) === 1 ? (
+                        <Trash2 className="w-4 h-4 text-red-500" />
+                      ) : (
+                        <span className="text-sm font-semibold">-</span>
+                      )}
+                    </button>
+
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      value={item.cantidad}
+                      onChange={(e) =>
+                        handleCantidadChange(item.id_producto, e.target.value)
+                      }
+                      onBlur={() =>
+                        handleCantidadBlur(item.id_producto, item.cantidad)
+                      }
+                      className="w-10 text-center text-sm font-semibold text-black bg-transparent border-none outline-none"
+                    />
+
+                    <button
+                      onClick={() =>
+                        onUpdateQuantity(
+                          item.id_producto,
+                          Math.min(99, Number(item.cantidad || 0) + 1)
+                        )
+                      }
+                      className="w-7 h-7 flex items-center justify-center rounded bg-black text-white hover:bg-gray-800 transition-colors"
+                      title="Aumentar cantidad"
+                    >
+                      <span className="text-sm font-semibold">+</span>
+                    </button>
+                  </div>
+
+                  {canHaveNota && (
+                    <div>
+                      {editingNoteId === String(item.id_producto) ? (
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            value={noteDraftById[String(item.id_producto)] ?? ""}
+                            onChange={(e) =>
+                              setNoteDraftById((prev) => ({
+                                ...prev,
+                                [String(item.id_producto)]: e.target.value,
+                              }))
+                            }
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                saveAndCloseNoteEditor(item);
+                              }
+                            }}
+                            placeholder="Ej: color azul"
+                            className="flex-1 px-2.5 py-1.5 text-sm border border-gray-100 rounded focus:outline-none focus:ring-1 focus:ring-gray-200 focus:border-gray-200"
+                            autoFocus
+                          />
+                          <button
+                            type="button"
+                            onClick={() => saveAndCloseNoteEditor(item)}
+                            className="px-3 py-1.5 text-xs font-medium bg-black text-white rounded hover:bg-gray-800"
+                          >
+                            OK
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          {hasNota ? (
+                            <span className="text-sm text-gray-500 truncate">
+                              Nota: {item.nota_personalizable}
+                            </span>
+                          ) : (
+                            <span className="text-sm text-gray-400">Sin nota</span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => openNoteEditor(item)}
+                            className="text-sm text-gray-700 hover:text-black underline underline-offset-2"
+                          >
+                            Editar
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               ) : (
-                <p className="text-sm">
-                  <span className="text-gray-600">Cantidad:</span>{" "}
-                  <span className="font-medium">{item.cantidad}</span>
-                </p>
+                <div className="space-y-2">
+                  <p className="text-sm">
+                    <span className="text-gray-600">Cantidad:</span>{" "}
+                    <span className="font-medium">{item.cantidad}</span>
+                  </p>
+                  {hasNota ? (
+                    <p className="text-sm text-gray-500 break-words">
+                      Nota: {item.nota_personalizable}
+                    </p>
+                  ) : (
+                    <p className="text-sm invisible select-none">Nota: —</p>
+                  )}
+                </div>
               )}
             </div>
 
-            <div className="text-right flex flex-col justify-between items-end">
-              <div className="font-semibold text-gray-900">
+            <div className="text-right flex flex-col justify-start items-end">
+              <div className="font-semibold text-lg sm:text-base leading-none text-gray-900 mt-0.5 sm:mt-0">
                 ${Number(item.subtotal || 0).toLocaleString("es-MX", {
                   minimumFractionDigits: 2,
                 })}
               </div>
-
-              {isEditing && (
-                <button
-                  onClick={() => onRemoveProduct(item.id_producto)}
-                  className="text-red-500 hover:text-red-700 transition-colors text-sm flex items-center gap-1"
-                >
-                  <Trash2 className="w-4 h-4" />
-                  Eliminar
-                </button>
-              )}
             </div>
+            </div>
+          );
+        })}
           </div>
-        ))}
+        </div>
       </div>
     </div>
   );

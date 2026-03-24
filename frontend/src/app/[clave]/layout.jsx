@@ -7,19 +7,15 @@ import { CartProvider } from "@/context/CartContext"   // ⬅️ importa el carr
 
 export default function Layout({ children }) {
   return (
-    <html lang="es">
-      <body>
-        <VendedorProvider>
-          <PaginaPrincipalProvider>
-            <ProductosProvider>
-              <CartProvider>
-                <Header />
-                {children}
-              </CartProvider>
-            </ProductosProvider>
-          </PaginaPrincipalProvider>
-        </VendedorProvider>
-      </body>
-    </html>
+    <VendedorProvider>
+      <PaginaPrincipalProvider>
+        <ProductosProvider>
+          <CartProvider>
+            <Header />
+            {children}
+          </CartProvider>
+        </ProductosProvider>
+      </PaginaPrincipalProvider>
+    </VendedorProvider>
   )
 }

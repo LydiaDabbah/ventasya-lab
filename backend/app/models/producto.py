@@ -1,7 +1,10 @@
 import uuid
 from datetime import datetime
+
 from sqlalchemy import Column, String, Boolean, Float, DateTime, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship
+
 from app.db.database import Base
 
 
@@ -17,13 +20,19 @@ class Producto(Base):
     imagen_url = Column(String, nullable=False)
     slug = Column(String, nullable=False)
 
-    # ✅ NUEVO: si el producto permite personalización en cotización
+    # Si el producto permite personalización en cotización
     personalizable = Column(Boolean, nullable=False, default=False)
 
     # SKU opcional pero único
     sku = Column(String, unique=True, nullable=True)
 
-    activo = Column(Boolean, default=True)
+    activo = Column(Boolean, nullable=False, default=True)
 
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    categorias_rel = relationship(
+        "ProductoCategoria",
+        back_populates="producto",
+        cascade="all, delete-orphan",
+    )

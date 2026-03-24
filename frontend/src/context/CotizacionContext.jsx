@@ -33,6 +33,14 @@ export function CotizacionProvider({ children, numeroCotizacion = null, token = 
   const [error, setError] = useState(null);
   const [isEditable, setIsEditable] = useState(false);
 
+  const normalizeStatus = (status) => {
+    const normalized = String(status || "").trim().toLowerCase();
+    if (["generada", "borrador"].includes(normalized)) return "pendiente";
+    if (["proceso", "en proceso"].includes(normalized)) return "en_proceso";
+    if (["aprobada", "cerrada"].includes(normalized)) return "aceptada";
+    return normalized;
+  };
+
   // =============================
   // CALCULOS
   // =============================
@@ -93,10 +101,13 @@ export function CotizacionProvider({ children, numeroCotizacion = null, token = 
 
         tokenRef.current = providedToken ?? tokenRef.current;
 
+        const isPending = normalizeStatus(data?.status) === "pendiente";
+
         if (
           tokenRef.current &&
           data?.editable_token === tokenRef.current &&
-          data?.editable_token_active !== false
+          data?.editable_token_active !== false &&
+          isPending
         ) {
           setIsEditable(true);
         } else {
@@ -215,6 +226,7 @@ export function CotizacionProvider({ children, numeroCotizacion = null, token = 
         precio_unitario,
         nombre: producto?.nombre ?? undefined,
         precio: producto?.precio ?? undefined,
+        personalizable: Boolean(producto?.personalizable),
         cantidad: qty,
         subtotal: Number((precio_unitario * qty).toFixed(2)),
         nota_personalizable: null,
@@ -301,6 +313,14 @@ export function CotizacionProvider({ children, numeroCotizacion = null, token = 
   // =============================
   const saveCotizacion = async ({ idVendedor = null } = {}) => {
     if (!cotizacion?.id_cotizacion) return { error: true };
+    if (normalizeStatus(cotizacion?.status) !== "pendiente") {
+      setIsEditable(false);
+      return {
+        error: true,
+        code: "STATUS_NO_EDITABLE",
+        message: "Esta cotización ya no está en estado pendiente, por lo que no se puede editar.",
+      };
+    }
 
     const valid = await validarCodigoEnGuardado({ idVendedor });
     if (valid?.error) return valid;
@@ -328,7 +348,8 @@ export function CotizacionProvider({ children, numeroCotizacion = null, token = 
           precio_unitario: p.precio_unitario,
           nombre_producto: p.nombre_producto,
           subtotal: p.subtotal,
-          nota_personalizable: p.nota_personalizable ?? null,
+          nota_personalizable:
+            p.personalizable === true ? p.nota_personalizable ?? null : null,
         })),
       };
 

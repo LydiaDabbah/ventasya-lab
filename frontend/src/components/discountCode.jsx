@@ -62,6 +62,7 @@ export default function DiscountCode({
   return (
     <div className="w-full">
       <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap">
+       
         {!descuentoAplicado ? (
           <>
             <input
@@ -71,7 +72,7 @@ export default function DiscountCode({
                 setCodigoDescuento(e.target.value);
                 if (errorDescuento) setErrorDescuento("");
               }}
-              className="flex-1 min-w-0 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-black text-sm"
+              className="w-full sm:w-64 lg:w-56 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-black text-sm"
               placeholder="Código de descuento"
               aria-label="Código de descuento"
             />

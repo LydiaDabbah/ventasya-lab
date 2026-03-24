@@ -45,6 +45,9 @@ class CotizacionRequest(BaseModel):
     total: Optional[float] = 0.0
     productos: List[ProductoPedido]
 
+class CotizacionStatusUpdate(BaseModel):
+    status: str
+
 
 # -----------------------
 # DB helper
@@ -67,6 +70,90 @@ def generar_numero_cotizacion() -> str:
 # ---------------------------
 def _norm_code(code: str) -> str:
     return code.strip().upper()
+
+
+def _norm_descripcion_envio(value: Optional[str]) -> str:
+    """
+    Normaliza etiquetas del frontend al enum de DB:
+      - por_definir
+      - incluido
+      - monto_fijo
+    """
+    if value is None:
+        return "por_definir"
+
+    raw = str(value).strip()
+    if raw == "":
+        return "por_definir"
+
+    key = (
+        raw.lower()
+        .replace("á", "a")
+        .replace("é", "e")
+        .replace("í", "i")
+        .replace("ó", "o")
+        .replace("ú", "u")
+        .replace(" ", "_")
+    )
+
+    alias = {
+        "por_definir": "por_definir",
+        "pordefinir": "por_definir",
+        "incluido": "incluido",
+        "incluida": "incluido",
+        "monto_fijo": "monto_fijo",
+        "monto": "monto_fijo",
+        "fijo": "monto_fijo",
+    }
+
+    normalized = alias.get(key)
+    if normalized:
+        return normalized
+
+    raise HTTPException(
+        status_code=400,
+        detail="descripcion_envio inválida. Usa: por_definir, incluido o monto_fijo",
+    )
+
+
+def _norm_status(value: Optional[str]) -> str:
+    if value is None:
+        raise HTTPException(status_code=400, detail="status requerido")
+
+    key = (
+        str(value)
+        .strip()
+        .lower()
+        .replace("á", "a")
+        .replace("é", "e")
+        .replace("í", "i")
+        .replace("ó", "o")
+        .replace("ú", "u")
+        .replace(" ", "_")
+    )
+
+    alias = {
+        "pendiente": "pendiente",
+        "generada": "pendiente",
+        "borrador": "pendiente",
+        "enviada": "enviada",
+        "aceptada": "aceptada",
+        "aprobada": "aceptada",
+        "en_proceso": "en_proceso",
+        "proceso": "en_proceso",
+        "completada": "completada",
+        "cerrada": "completada",
+        "cancelada": "cancelada",
+    }
+
+    normalized = alias.get(key)
+    if normalized:
+        return normalized
+
+    raise HTTPException(
+        status_code=400,
+        detail="status inválido. Usa: pendiente, enviada, aceptada, en_proceso, completada o cancelada",
+    )
 
 
 def calcular_descuento_obj(codigo_obj: CodigoDescuento, subtotal: float, id_vendedor: Optional[str] = None) -> float:
@@ -151,6 +238,11 @@ def validar_y_preparar_detalles_db(productos_input: List[dict], id_vendedor_expe
         else:
             precio_unitario = float(getattr(prod, "precio", 0.0) or 0.0)
 
+        personalizable = bool(getattr(prod, "personalizable", False))
+        nota_personalizable = p.get("nota_personalizable")
+        if not personalizable:
+            nota_personalizable = None
+
         subtotal_item = money(precio_unitario * cantidad)
 
         detalles_payload.append({
@@ -159,7 +251,8 @@ def validar_y_preparar_detalles_db(productos_input: List[dict], id_vendedor_expe
             "precio_unitario": precio_unitario,
             "cantidad": cantidad,
             "subtotal": subtotal_item,
-            "nota_personalizable": p.get("nota_personalizable")
+            "nota_personalizable": nota_personalizable,
+            "personalizable": personalizable,
         })
 
     return detalles_payload
@@ -216,6 +309,7 @@ def listar_cotizaciones(id_vendedor: Optional[str] = Query(None), db: Session = 
                     "cantidad": int(d.cantidad),
                     **({"subtotal": float(d.subtotal)} if hasattr(d, "subtotal") else {}),
                     "imagen_url": getattr(prod_obj, "imagen_url", None) if prod_obj else None,
+                    "personalizable": bool(getattr(prod_obj, "personalizable", False)) if prod_obj else False,
                 })
 
         total_val = float(getattr(cot, "total", sum((p.get("subtotal", 0) for p in productos)) + float(getattr(cot, "costo_envio", 0) or 0) - float(getattr(cot, "descuento_aplicado", 0) or 0)))
@@ -246,6 +340,48 @@ def listar_cotizaciones(id_vendedor: Optional[str] = Query(None), db: Session = 
     return out
 
 
+# -----------------------
+# ACTUALIZAR STATUS DE COTIZACIÓN
+# -----------------------
+@router.patch("/{id_cotizacion}/status", response_model=Dict[str, Any])
+def actualizar_status_cotizacion(
+    id_cotizacion: str,
+    payload: CotizacionStatusUpdate,
+    id_vendedor: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+):
+    try:
+        cot_uuid = UUID_cls(str(id_cotizacion))
+    except Exception:
+        raise HTTPException(status_code=400, detail="id_cotizacion inválido")
+
+    cot = db.query(Cotizacion).filter(Cotizacion.id_cotizacion == cot_uuid).first()
+    if not cot:
+        raise HTTPException(status_code=404, detail="Cotización no encontrada")
+
+    if id_vendedor:
+        try:
+            vend_uuid = UUID_cls(str(id_vendedor))
+        except Exception:
+            raise HTTPException(status_code=400, detail="id_vendedor inválido")
+        if str(cot.id_vendedor) != str(vend_uuid):
+            raise HTTPException(status_code=403, detail="No autorizado para modificar esta cotización")
+
+    cot.status = _norm_status(payload.status)
+    if "updated_at" in Cotizacion.__table__.columns:
+        cot.updated_at = datetime.utcnow()
+
+    db.commit()
+    db.refresh(cot)
+
+    return {
+        "id_cotizacion": str(cot.id_cotizacion),
+        "numero_cotizacion": cot.numero_cotizacion,
+        "status": str(cot.status),
+        "updated_at": cot.updated_at.isoformat() if getattr(cot, "updated_at", None) else None,
+    }
+
+
 # =====================================
 #  POST  Crear cotización (crea cotizacion + version + detalles)
 # =====================================
@@ -257,6 +393,7 @@ def crear_cotizacion(data: CotizacionRequest, db: Session = Depends(get_db)):
     # Validar y preparar detalles (usar precios actuales DB)
     detalles_payload = validar_y_preparar_detalles_db([p.dict() for p in data.productos], data.id_vendedor, db, allow_price_override=False)
     costo_envio = float(data.costo_envio or 0.0)
+    descripcion_envio = _norm_descripcion_envio(data.descripcion_envio)
     total_productos = sum(d["subtotal"] for d in detalles_payload)
 
     # manejar codigo de descuento
@@ -316,7 +453,7 @@ def crear_cotizacion(data: CotizacionRequest, db: Session = Depends(get_db)):
             id_codigo_descuento=codigo_obj.id if codigo_obj else None,
             descuento_aplicado=descuento_monto,
             costo_envio=costo_envio,
-            descripcion_envio=data.descripcion_envio,
+            descripcion_envio=descripcion_envio,
             total=total_final,
             created_at=datetime.utcnow(),
 )
@@ -382,8 +519,10 @@ def crear_cotizacion(data: CotizacionRequest, db: Session = Depends(get_db)):
                 "precio_unitario": float(d.precio_unitario),
                 "cantidad": int(d.cantidad),
                 **({"subtotal": float(d.subtotal)} if hasattr(d, "subtotal") else {}),
+                "nota_personalizable": d.nota_personalizable,
                 "imagen_url": getattr(prod_obj, "imagen_url", None) if prod_obj else None,
                 "slug": getattr(prod_obj, "slug", None) if prod_obj else None,
+                "personalizable": bool(getattr(prod_obj, "personalizable", False)) if prod_obj else False,
             })
 
     cot_out = {
@@ -393,6 +532,7 @@ def crear_cotizacion(data: CotizacionRequest, db: Session = Depends(get_db)):
         "telefono_cliente": version.telefono_cliente,
         "nombre_cliente": version.nombre_cliente,
         "email_cliente": version.email_cliente,
+        "direccion": getattr(version, "direccion", None),
         "comentarios": version.comentarios,
         "id_codigo_descuento": str(version.id_codigo_descuento) if getattr(version, "id_codigo_descuento", None) else None,
         "codigo_descuento": codigo_obj.codigo if codigo_obj else None,
@@ -481,6 +621,7 @@ def obtener_cotizacion(numero_cotizacion: str, db: Session = Depends(get_db)):
                 "subtotal": float(d.subtotal) if getattr(d, "subtotal", None) is not None else None,
                 "imagen_url": imagen_url,
                 "slug": slug,
+                "personalizable": bool(getattr(prod_obj, "personalizable", False)) if prod_obj else False,
             })
 
     # calcular total (fallback si no está en la versión)
@@ -536,6 +677,7 @@ def actualizar_cotizacion(numero_cotizacion: str, data: CotizacionRequest, db: S
     # Validar/Preparar detalles permitiendo overrides (admin)
     detalles_payload = validar_y_preparar_detalles_db([p.dict() for p in data.productos], data.id_vendedor, db, allow_price_override=True)
     subtotal_total = sum(item["subtotal"] for item in detalles_payload)
+    descripcion_envio = _norm_descripcion_envio(data.descripcion_envio)
 
     codigo_obj = None
     descuento_monto = float(data.descuento_aplicado or 0)
@@ -580,7 +722,7 @@ def actualizar_cotizacion(numero_cotizacion: str, data: CotizacionRequest, db: S
             id_codigo_descuento=codigo_obj.id if codigo_obj else None,
             descuento_aplicado=descuento_monto,
             costo_envio=float(data.costo_envio or 0.0),
-            descripcion_envio=data.descripcion_envio,
+            descripcion_envio=descripcion_envio,
             total=total_final,
             created_at=datetime.utcnow(),
         )
@@ -643,8 +785,10 @@ def actualizar_cotizacion(numero_cotizacion: str, data: CotizacionRequest, db: S
                 "precio_unitario": float(d.precio_unitario),
                 "cantidad": int(d.cantidad),
                 **({"subtotal": float(d.subtotal)} if hasattr(d, "subtotal") else {}),
+                "nota_personalizable": d.nota_personalizable,
                 "imagen_url": getattr(prod_obj, "imagen_url", None) if prod_obj else None,
                 "slug": getattr(prod_obj, "slug", None) if prod_obj else None,
+                "personalizable": bool(getattr(prod_obj, "personalizable", False)) if prod_obj else False,
             })
 
     cot_out = {
@@ -654,6 +798,7 @@ def actualizar_cotizacion(numero_cotizacion: str, data: CotizacionRequest, db: S
         "telefono_cliente": version.telefono_cliente,
         "nombre_cliente": version.nombre_cliente,
         "email_cliente": version.email_cliente,
+        "direccion": getattr(version, "direccion", None),
         "comentarios": version.comentarios,
         "id_codigo_descuento": str(version.id_codigo_descuento) if getattr(version, "id_codigo_descuento", None) else None,
         "codigo_descuento": codigo_obj.codigo if codigo_obj else None,
@@ -697,9 +842,9 @@ def editar_cotizacion_por_token_query(
     if not getattr(cot, "editable_token_active", True):
         raise HTTPException(status_code=403, detail="Edición deshabilitada para esta cotización")
 
-    # validar estado (no permitir edición si ya fue pagada/entregada/cancelada)
-    if str(getattr(cot, "status", "")).lower() in ("pagada", "entregada", "cancelada"):
-        raise HTTPException(status_code=400, detail="No se puede editar una cotización en estado pagada/entregada/cancelada")
+    # validar estado (solo permitir edición si sigue pendiente)
+    if _norm_status(getattr(cot, "status", None)) != "pendiente":
+        raise HTTPException(status_code=400, detail="Solo se puede editar una cotización en estado pendiente")
 
     # === Validaciones de productos y cálculo (reusar la lógica de crear/put) ===
     productos_input = data.get("productos", [])
@@ -713,6 +858,7 @@ def editar_cotizacion_por_token_query(
 
     detalles_payload = validar_y_preparar_detalles_db(productos_input, id_vendedor_expected, db, allow_price_override=False)
     subtotal_total = sum(item["subtotal"] for item in detalles_payload)
+    descripcion_envio = _norm_descripcion_envio(data.get("descripcion_envio"))
 
     costo_envio = float(data.get("costo_envio", 0.0) or 0.0)
 
@@ -759,7 +905,7 @@ def editar_cotizacion_por_token_query(
             id_codigo_descuento=codigo_obj.id if codigo_obj else None,
             descuento_aplicado=descuento_monto,
             costo_envio=costo_envio,
-            descripcion_envio=data.get("descripcion_envio"),
+            descripcion_envio=descripcion_envio,
             total=total_final,
             created_at=datetime.utcnow(),
         )
@@ -827,8 +973,10 @@ def editar_cotizacion_por_token_query(
                 "precio_unitario": float(d.precio_unitario),
                 "cantidad": int(d.cantidad),
                 **({"subtotal": float(d.subtotal)} if hasattr(d, "subtotal") else {}),
+                "nota_personalizable": d.nota_personalizable,
                 "imagen_url": getattr(prod_obj, "imagen_url", None) if prod_obj else None,
                 "slug": getattr(prod_obj, "slug", None) if prod_obj else None,
+                "personalizable": bool(getattr(prod_obj, "personalizable", False)) if prod_obj else False,
             })
 
     cot_out = {
@@ -838,6 +986,7 @@ def editar_cotizacion_por_token_query(
         "telefono_cliente": version.telefono_cliente,
         "nombre_cliente": version.nombre_cliente,
         "email_cliente": version.email_cliente,
+        "direccion": getattr(version, "direccion", None),
         "comentarios": version.comentarios,
         "id_codigo_descuento": str(version.id_codigo_descuento) if getattr(version, "id_codigo_descuento", None) else None,
         "codigo_descuento": codigo_obj.codigo if codigo_obj else None,

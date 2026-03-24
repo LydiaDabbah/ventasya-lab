@@ -7,7 +7,7 @@ import CardProducto from "./cardProducto";
 
 export default function AllProducts({ onSelectProduct }) {
   const { productos, productoCategorias } = useProductos();
-  const { categorias } = usePaginaPrincipal();
+  const { categorias, datosVisuales } = usePaginaPrincipal();
 
   const [categoriaActiva, setCategoriaActiva] = useState("todos");
 
@@ -29,11 +29,23 @@ export default function AllProducts({ onSelectProduct }) {
     setDropdownOpen(false);
   };
 
+  const categoriasOrdenadas = useMemo(() => {
+    const collator = new Intl.Collator("es-MX", {
+      sensitivity: "base",
+      numeric: true,
+    });
+    return [...(categorias || [])].sort((a, b) =>
+      collator.compare(String(a?.nombre || ""), String(b?.nombre || ""))
+    );
+  }, [categorias]);
+
   const categoriaNombre = useMemo(() => {
     if (categoriaActiva === "todos") return "Todas";
-    const found = (categorias || []).find((c) => c.id_categoria === categoriaActiva);
+    const found = categoriasOrdenadas.find(
+      (c) => String(c.id_categoria) === String(categoriaActiva)
+    );
     return found?.nombre || "Categoría";
-  }, [categoriaActiva, categorias]);
+  }, [categoriaActiva, categoriasOrdenadas]);
 
   const productosFiltrados = useMemo(() => {
     if (categoriaActiva === "todos") return productos || [];
@@ -46,15 +58,22 @@ export default function AllProducts({ onSelectProduct }) {
 
   const totalProductos = (productos || []).length;
   const mostrados = (productosFiltrados || []).length;
+  const tituloAllProducts = String(datosVisuales?.titulo || "").trim() || "Nuestra colección";
+  const subtituloAllProducts =
+    String(datosVisuales?.subtitulo || "").trim() ||
+    "Descubre nuestros productos, seleccionados con cuidado para ti.";
 
   return (
     <section className="bg-white py-12 lg:py-16">
-      <div className="mx-4 md:mx-12 px-4 sm:px-6 lg:px-8">
+      <div className="mx-4 md:mx-auto md:max-w-5xl lg:max-w-6xl xl:max-w-7xl px-4 sm:px-6 md:px-10 lg:px-8 xl:px-8">
         {/* Título separado (más arriba) */}
-        <div className="mb-10">
-          <h2 className="text-3xl font-bold text-black">
-            {onSelectProduct ? "Elige productos para tu cotización" : "Todos los productos"}
+        <div className="mb-10 text-center">
+          <h2 className="text-2xl md:text-3xl font-bold text-black pb-2">
+            {onSelectProduct ? "Elige productos para tu cotización" : tituloAllProducts}
           </h2>
+          <p className=" text-sm md:text-base  text-gray-600">
+            {onSelectProduct ? "" : subtituloAllProducts}
+          </p>
         </div>
 
         {/* Controles pegados a la grid */}
@@ -97,7 +116,7 @@ export default function AllProducts({ onSelectProduct }) {
                   Todas
                 </button>
 
-                {(categorias || []).map((cat) => (
+                {categoriasOrdenadas.map((cat) => (
                   <button
                     key={cat.id_categoria}
                     type="button"

@@ -1,4 +1,5 @@
 "use client"
+import Link from "next/link"
 import {
   LayoutDashboard,
   User,
@@ -13,7 +14,6 @@ import {
 
 export default function AdminSidebar({
   activeSection,
-  setActiveSection,
   sidebarCollapsed,
   setSidebarCollapsed,
   showMobileSidebar,
@@ -31,13 +31,13 @@ export default function AdminSidebar({
       icon: <User className="w-5 h-5" />,
     },
     {
-      id: "products",
+      id: "productos",
       label: "Products",
       icon: <Package className="w-5 h-5" />,
     },
     {
-      id: "orders",
-      label: "Order History",
+      id: "cotizaciones",
+      label: "Cotizaciones",
       icon: <ShoppingBag className="w-5 h-5" />,
     },
     {
@@ -51,12 +51,6 @@ export default function AdminSidebar({
       icon: <Settings className="w-5 h-5" />,
     },
   ]
-
-  const handleMenuClick = (sectionId) => {
-    setActiveSection(sectionId)
-    // Cerrar sidebar móvil al seleccionar una opción
-    setShowMobileSidebar(false)
-  }
 
   return (
     <>
@@ -118,9 +112,10 @@ export default function AdminSidebar({
         {/* Navigation */}
         <nav className="px-3 py-4 lg:pb-6 space-y-1">
           {menuItems.map((item) => (
-            <button
+            <Link
               key={item.id}
-              onClick={() => handleMenuClick(item.id)}
+              href={`/adminPanel/${item.id}`}
+              onClick={() => setShowMobileSidebar(false)}
               className={`
                 w-full flex items-center px-3 py-3 text-sm font-medium rounded-lg 
                 transition-colors duration-200
@@ -131,7 +126,7 @@ export default function AdminSidebar({
             >
               <span className="flex-shrink-0">{item.icon}</span>
               {(!sidebarCollapsed || showMobileSidebar) && <span className="truncate">{item.label}</span>}
-            </button>
+            </Link>
           ))}
         </nav>
       </div>

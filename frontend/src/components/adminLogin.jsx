@@ -75,7 +75,7 @@ export default function AdminAuth() {
             </h1>
             <p className="text-gray-500 text-sm leading-relaxed">
               {activeTab === "signin"
-                ? "Sign in to your admin dashboard to manage products, orders and store settings"
+                ? "Sign in to your admin dashboard to manage products, quotations and store settings"
                 : "Set up your admin account to start managing your store and products"}
             </p>
             {errors.general && (

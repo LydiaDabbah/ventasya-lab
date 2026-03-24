@@ -209,6 +209,9 @@ export default function CotizacionPage() {
       productos: items.map((it) => ({
         id_producto: it.id_producto,
         cantidad: Number(it.cantidad || 0),
+        nota_personalizable: it.nota_personalizable?.trim()
+          ? it.nota_personalizable.trim()
+          : null,
       })),
     };
 
@@ -359,7 +362,7 @@ export default function CotizacionPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 py-8 px-4">
-      <div className="max-w-6xl mx-auto">
+      <div className="max-w-5xl mx-auto">
         <div className="mb-8">
           <button
             onClick={volverAlCatalogo}

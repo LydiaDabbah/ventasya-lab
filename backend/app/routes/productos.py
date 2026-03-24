@@ -5,15 +5,22 @@ from sqlalchemy.orm import Session
 from uuid import UUID, uuid4
 from datetime import datetime
 from typing import Optional, List
+from pydantic import BaseModel
 
 from slugify import slugify
 
 from app.db.database import SessionLocal
 from app.models.producto import Producto
-from app.schemas.producto import ProductoCreate, ProductoOut
+from app.models.producto_categoria import ProductoCategoria
+from app.models.categoria import Categoria
+from app.schemas.producto import ProductoCreate, ProductoOut, ProductoUpdate
 
 router = APIRouter(prefix="/productos", tags=["Productos"])
 logger = logging.getLogger("uvicorn.error")
+
+
+class ProductoActivoUpdate(BaseModel):
+    activo: bool
 
 
 def get_db():
@@ -169,4 +176,80 @@ def obtener_producto_por_id(id_producto: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Producto no encontrado")
 
     logger.info("GET /productos: producto encontrado id=%s name=%s", id_producto, producto.nombre)
+    return producto
+
+
+@router.patch("/{id_producto}/activo", response_model=ProductoOut)
+def actualizar_estado_producto(id_producto: str, payload: ProductoActivoUpdate, db: Session = Depends(get_db)):
+    logger.info("PATCH /productos/%s/activo called", id_producto)
+    try:
+        uid = UUID(id_producto)
+    except Exception:
+        raise HTTPException(status_code=400, detail="id_producto inválido")
+
+    producto = db.query(Producto).filter(Producto.id_producto == uid).first()
+    if not producto:
+        raise HTTPException(status_code=404, detail="Producto no encontrado")
+
+    producto.activo = bool(payload.activo)
+    producto.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(producto)
+
+    logger.info("producto estado actualizado id=%s activo=%s", id_producto, producto.activo)
+    return producto
+
+
+@router.put("/{id_producto}", response_model=ProductoOut)
+def actualizar_producto(id_producto: str, payload: ProductoUpdate, db: Session = Depends(get_db)):
+    logger.info("PUT /productos/%s called", id_producto)
+    try:
+        uid = UUID(id_producto)
+    except Exception:
+        raise HTTPException(status_code=400, detail="id_producto inválido")
+
+    producto = db.query(Producto).filter(Producto.id_producto == uid).first()
+    if not producto:
+        raise HTTPException(status_code=404, detail="Producto no encontrado")
+
+    data = payload.dict(exclude_unset=True)
+    categorias_ids = data.pop("categorias_ids", None)
+
+    for field, value in data.items():
+        setattr(producto, field, value)
+
+    if categorias_ids is not None:
+        categorias_validas = db.query(Categoria).filter(
+            Categoria.id_categoria.in_(categorias_ids),
+            Categoria.id_vendedor == producto.id_vendedor,
+            Categoria.activo == True,  # noqa: E712
+        ).all()
+        categorias_validas_ids = {c.id_categoria for c in categorias_validas}
+
+        if len(categorias_validas_ids) != len(set(categorias_ids)):
+            raise HTTPException(status_code=400, detail="Una o más categorías son inválidas para este vendedor")
+
+        actuales = db.query(ProductoCategoria).filter(
+            ProductoCategoria.id_producto == producto.id_producto
+        ).all()
+        actuales_ids = {rel.id_categoria for rel in actuales}
+
+        nuevas_ids = set(categorias_ids)
+        to_add = nuevas_ids - actuales_ids
+        to_delete = actuales_ids - nuevas_ids
+
+        if to_delete:
+            db.query(ProductoCategoria).filter(
+                ProductoCategoria.id_producto == producto.id_producto,
+                ProductoCategoria.id_categoria.in_(list(to_delete)),
+            ).delete(synchronize_session=False)
+
+        for cat_id in to_add:
+            db.add(ProductoCategoria(id_producto=producto.id_producto, id_categoria=cat_id))
+
+    producto.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(producto)
+
+    logger.info("producto actualizado id=%s", id_producto)
     return producto

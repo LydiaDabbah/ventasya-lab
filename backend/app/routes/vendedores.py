@@ -44,6 +44,7 @@ def crear_vendedor(vendedor: VendedorCreate, db: Session = Depends(get_db)):
         email=vendedor.email,
         nombre_negocio=vendedor.nombre_negocio,
         clave=vendedor.clave.strip().lower(),  # limpia espacios y convierte a minúsculas
+        moneda=vendedor.moneda,
         password_hash=hash_password(vendedor.password),
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow(),
@@ -65,7 +66,8 @@ def crear_vendedor(vendedor: VendedorCreate, db: Session = Depends(get_db)):
             "nombre": nuevo.nombre,
             "nombre_negocio": nuevo.nombre_negocio,
             "clave": nuevo.clave,
-            "email": nuevo.email
+            "email": nuevo.email,
+            "moneda": nuevo.moneda,
         }
     }
 
@@ -97,7 +99,8 @@ def login_vendedor(credentials: VendedorLogin, db: Session = Depends(get_db)):
             "nombre": vendedor.nombre,
             "nombre_negocio": vendedor.nombre_negocio,
             "clave": vendedor.clave,
-            "email": vendedor.email
+            "email": vendedor.email,
+            "moneda": vendedor.moneda,
         }
     }
 

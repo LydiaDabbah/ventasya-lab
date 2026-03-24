@@ -1,152 +1,256 @@
+import { useEffect, useMemo, useState } from "react";
+import { useAuth } from "@/context/AuthContext";
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+function formatMoney(amount) {
+  return new Intl.NumberFormat("es-MX", {
+    style: "currency",
+    currency: "MXN",
+    maximumFractionDigits: 2,
+  }).format(Number(amount || 0));
+}
+
+function formatDate(value) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return new Intl.DateTimeFormat("es-MX", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
 export default function DashboardSection() {
-    return (
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-bold text-black mb-2">Dashboard</h1>
-          <p className="text-gray-600 text-sm sm:text-base">Welcome back! Here's what's happening with your store.</p>
+  const { vendedor } = useAuth();
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [cotizaciones, setCotizaciones] = useState([]);
+  const [productos, setProductos] = useState([]);
+  const [versionesRecientes, setVersionesRecientes] = useState([]);
+
+  useEffect(() => {
+    if (!vendedor?.id_vendedor) {
+      setLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+
+    async function loadDashboardData() {
+      setLoading(true);
+      setError("");
+
+      try {
+        const [cotRes, prodRes] = await Promise.all([
+          fetch(`${API_BASE}/cotizaciones/?id_vendedor=${encodeURIComponent(vendedor.id_vendedor)}`, {
+            signal: controller.signal,
+          }),
+          fetch(`${API_BASE}/productos/?id_vendedor=${encodeURIComponent(vendedor.id_vendedor)}`, {
+            signal: controller.signal,
+          }),
+        ]);
+
+        if (!cotRes.ok) throw new Error("No se pudieron cargar las cotizaciones");
+        if (!prodRes.ok) throw new Error("No se pudieron cargar los productos");
+
+        const [cotDataRaw, prodData] = await Promise.all([cotRes.json(), prodRes.json()]);
+        const cotData = Array.isArray(cotDataRaw) ? cotDataRaw : [];
+
+        setCotizaciones(cotData);
+        setProductos(Array.isArray(prodData) ? prodData : []);
+
+        const cotizacionesConVersiones = [...cotData]
+          .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
+          .slice(0, 12)
+          .filter((cot) => Boolean(cot?.id_cotizacion));
+
+        const versionesRequests = await Promise.allSettled(
+          cotizacionesConVersiones.map(async (cot) => {
+            const res = await fetch(
+              `${API_BASE}/cotizaciones/versiones/por-cotizacion/${encodeURIComponent(cot.id_cotizacion)}`,
+              { signal: controller.signal },
+            );
+            if (!res.ok) return [];
+            const versions = await res.json();
+            if (!Array.isArray(versions)) return [];
+            return versions.map((version) => ({
+              ...version,
+              cotizacion_current_version_id: cot.current_version_id,
+              cotizacion_status: cot.status,
+            }));
+          }),
+        );
+
+        const versionItems = versionesRequests.flatMap((result) =>
+          result.status === "fulfilled" && Array.isArray(result.value) ? result.value : [],
+        );
+        setVersionesRecientes(versionItems);
+      } catch (err) {
+        if (err.name !== "AbortError") {
+          setError(err.message || "Error al cargar dashboard");
+        }
+      } finally {
+        if (!controller.signal.aborted) setLoading(false);
+      }
+    }
+
+    loadDashboardData();
+    return () => controller.abort();
+  }, [vendedor?.id_vendedor]);
+
+  const metrics = useMemo(() => {
+    const totalCotizaciones = cotizaciones.length;
+    const ventasTotales = cotizaciones.reduce((acc, item) => acc + Number(item.total || 0), 0);
+    const promedioTicket = totalCotizaciones ? ventasTotales / totalCotizaciones : 0;
+    const editablesActivas = cotizaciones.filter((item) => item.editable_token_active).length;
+
+    const today = new Date();
+    const hoy = `${today.getFullYear()}-${today.getMonth()}-${today.getDate()}`;
+    const cotizacionesHoy = cotizaciones.filter((item) => {
+      if (!item.created_at) return false;
+      const created = new Date(item.created_at);
+      if (Number.isNaN(created.getTime())) return false;
+      return `${created.getFullYear()}-${created.getMonth()}-${created.getDate()}` === hoy;
+    }).length;
+
+    return {
+      totalCotizaciones,
+      ventasTotales,
+      promedioTicket,
+      totalProductos: productos.length,
+      editablesActivas,
+      cotizacionesHoy,
+    };
+  }, [cotizaciones, productos]);
+
+  const actividadReciente = useMemo(() => {
+    const events = [];
+
+    productos.forEach((prod) => {
+      if (!prod?.created_at) return;
+      events.push({
+        id: `producto-${prod.id_producto || prod.nombre}-${prod.created_at}`,
+        date: prod.created_at,
+        type: "producto",
+        title: `Alta de producto: ${prod.nombre || "Sin nombre"}`,
+        subtitle: prod.precio != null ? `Precio base: ${formatMoney(prod.precio)}` : "Producto agregado al catálogo",
+      });
+    });
+
+    cotizaciones.forEach((cot) => {
+      events.push({
+        id: `cotizacion-${cot.id_cotizacion || cot.numero_cotizacion}-creada`,
+        date: cot.created_at,
+        type: "cotizacion",
+        title: `Cotización creada: ${cot.numero_cotizacion || "Sin número"}`,
+        subtitle: `Cliente: ${cot.nombre_cliente || "Sin nombre"} | Total: ${formatMoney(cot.total)}`,
+      });
+
+      const statusNorm = (cot.status || "").toLowerCase();
+      if (["generada", "en_proceso", "proceso"].includes(statusNorm)) {
+        events.push({
+          id: `cotizacion-${cot.id_cotizacion || cot.numero_cotizacion}-proceso`,
+          date: cot.created_at,
+          type: "proceso",
+          title: `Cotización en proceso: ${cot.numero_cotizacion || "Sin número"}`,
+          subtitle: "Pendiente de confirmación o cierre",
+        });
+      }
+    });
+
+    versionesRecientes.forEach((version) => {
+      if (!version?.created_at || Number(version.version_number || 0) <= 1) return;
+      const isCurrent = version.id_version === version.cotizacion_current_version_id;
+      events.push({
+        id: `version-${version.id_version}`,
+        date: version.created_at,
+        type: "version",
+        title: `Cotización editada: ${version.numero_cotizacion || "Sin número"} (v${version.version_number})`,
+        subtitle: isCurrent ? "Esta es la versión actual" : "Versión histórica",
+      });
+    });
+
+    return events
+      .filter((event) => event.date)
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      .slice(0, 12);
+  }, [cotizaciones, productos, versionesRecientes]);
+
+  if (loading) {
+    return <div className="bg-white border border-gray-200 rounded-xl p-6 text-sm text-gray-600">Cargando dashboard...</div>;
+  }
+
+  if (error) {
+    return <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-sm text-red-700">{error}</div>;
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-xl sm:text-2xl font-bold text-black mb-2">Dashboard</h1>
+        <p className="text-gray-600 text-sm sm:text-base">
+          Resumen de tu tienda {vendedor?.nombre_negocio ? `(${vendedor.nombre_negocio})` : ""}.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+        <div className="bg-white p-4 sm:p-6 rounded-xl border border-gray-200">
+          <p className="text-sm font-medium text-gray-600">Total cotizaciones</p>
+          <p className="text-2xl font-bold text-black mt-2">{metrics.totalCotizaciones}</p>
         </div>
-  
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
-          <div className="bg-white p-4 sm:p-6 rounded-xl border border-gray-200">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Total Sales</p>
-                <p className="text-xl sm:text-2xl font-bold text-black">$12,426</p>
-              </div>
-              <div className="w-10 h-10 sm:w-12 sm:h-12 bg-green-100 rounded-lg flex items-center justify-center">
-                <svg
-                  className="w-5 h-5 sm:w-6 sm:h-6 text-green-600"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1"
-                  />
-                </svg>
-              </div>
-            </div>
-            <div className="mt-3 sm:mt-4 flex items-center">
-              <span className="text-green-600 text-sm font-medium">+12%</span>
-              <span className="text-gray-600 text-sm ml-2">from last month</span>
-            </div>
-          </div>
-  
-          <div className="bg-white p-4 sm:p-6 rounded-xl border border-gray-200">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Orders</p>
-                <p className="text-xl sm:text-2xl font-bold text-black">1,340</p>
-              </div>
-              <div className="w-10 h-10 sm:w-12 sm:h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-                <svg
-                  className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"
-                  />
-                </svg>
-              </div>
-            </div>
-            <div className="mt-3 sm:mt-4 flex items-center">
-              <span className="text-green-600 text-sm font-medium">+8%</span>
-              <span className="text-gray-600 text-sm ml-2">from last month</span>
-            </div>
-          </div>
-  
-          <div className="bg-white p-4 sm:p-6 rounded-xl border border-gray-200">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Products</p>
-                <p className="text-xl sm:text-2xl font-bold text-black">89</p>
-              </div>
-              <div className="w-10 h-10 sm:w-12 sm:h-12 bg-purple-100 rounded-lg flex items-center justify-center">
-                <svg
-                  className="w-5 h-5 sm:w-6 sm:h-6 text-purple-600"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"
-                  />
-                </svg>
-              </div>
-            </div>
-            <div className="mt-3 sm:mt-4 flex items-center">
-              <span className="text-green-600 text-sm font-medium">+3</span>
-              <span className="text-gray-600 text-sm ml-2">new this week</span>
-            </div>
-          </div>
-  
-          <div className="bg-white p-4 sm:p-6 rounded-xl border border-gray-200">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Customers</p>
-                <p className="text-xl sm:text-2xl font-bold text-black">2,420</p>
-              </div>
-              <div className="w-10 h-10 sm:w-12 sm:h-12 bg-orange-100 rounded-lg flex items-center justify-center">
-                <svg
-                  className="w-5 h-5 sm:w-6 sm:h-6 text-orange-600"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z"
-                  />
-                </svg>
-              </div>
-            </div>
-            <div className="mt-3 sm:mt-4 flex items-center">
-              <span className="text-green-600 text-sm font-medium">+18%</span>
-              <span className="text-gray-600 text-sm ml-2">from last month</span>
-            </div>
-          </div>
+
+        <div className="bg-white p-4 sm:p-6 rounded-xl border border-gray-200">
+          <p className="text-sm font-medium text-gray-600">Monto cotizado</p>
+          <p className="text-2xl font-bold text-black mt-2">{formatMoney(metrics.ventasTotales)}</p>
         </div>
-  
-        <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
-          <h3 className="text-lg font-semibold text-black mb-4">Recent Activity</h3>
-          <div className="space-y-3 sm:space-y-4">
-            <div className="flex items-center space-x-3 p-2 sm:p-3 hover:bg-gray-50 rounded-lg transition-colors">
-              <div className="w-2 h-2 bg-green-500 rounded-full flex-shrink-0"></div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-black truncate">New order received</p>
-                <p className="text-xs text-gray-500">2 minutes ago</p>
-              </div>
-            </div>
-            <div className="flex items-center space-x-3 p-2 sm:p-3 hover:bg-gray-50 rounded-lg transition-colors">
-              <div className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0"></div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-black truncate">Product updated</p>
-                <p className="text-xs text-gray-500">1 hour ago</p>
-              </div>
-            </div>
-            <div className="flex items-center space-x-3 p-2 sm:p-3 hover:bg-gray-50 rounded-lg transition-colors">
-              <div className="w-2 h-2 bg-purple-500 rounded-full flex-shrink-0"></div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-black truncate">Customer registered</p>
-                <p className="text-xs text-gray-500">3 hours ago</p>
-              </div>
-            </div>
-          </div>
+
+        <div className="bg-white p-4 sm:p-6 rounded-xl border border-gray-200">
+          <p className="text-sm font-medium text-gray-600">Ticket promedio</p>
+          <p className="text-2xl font-bold text-black mt-2">{formatMoney(metrics.promedioTicket)}</p>
+        </div>
+
+        <div className="bg-white p-4 sm:p-6 rounded-xl border border-gray-200">
+          <p className="text-sm font-medium text-gray-600">Cotizaciones hoy</p>
+          <p className="text-2xl font-bold text-black mt-2">{metrics.cotizacionesHoy}</p>
+        </div>
+
+        <div className="bg-white p-4 sm:p-6 rounded-xl border border-gray-200">
+          <p className="text-sm font-medium text-gray-600">Links editables activos</p>
+          <p className="text-2xl font-bold text-black mt-2">{metrics.editablesActivas}</p>
+        </div>
+
+        <div className="bg-white p-4 sm:p-6 rounded-xl border border-gray-200">
+          <p className="text-sm font-medium text-gray-600">Productos publicados</p>
+          <p className="text-2xl font-bold text-black mt-2">{metrics.totalProductos}</p>
         </div>
       </div>
-    )
-  }
-  
+
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div className="p-4 sm:p-6 border-b border-gray-200">
+          <h3 className="text-lg font-semibold text-black">Actividad reciente</h3>
+        </div>
+
+        {actividadReciente.length === 0 ? (
+          <div className="p-6 text-sm text-gray-600">Todavía no hay actividad para mostrar.</div>
+        ) : (
+          <div className="divide-y divide-gray-100">
+            {actividadReciente.map((activity) => (
+              <div key={activity.id} className="px-4 sm:px-6 py-4 flex items-start gap-3">
+                <span className="w-2.5 h-2.5 mt-2 rounded-full bg-black flex-shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-black">{activity.title}</p>
+                  <p className="text-xs text-gray-600 mt-0.5">{activity.subtitle}</p>
+                  <p className="text-xs text-gray-500 mt-1">{formatDate(activity.date)}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

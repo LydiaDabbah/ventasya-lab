@@ -1,5 +1,15 @@
 // utils/formatoDescripcion.jsx
-import { Dot } from "lucide-react";
+import React from "react";
+
+const renderInlineBold = (text = "") =>
+  String(text)
+    .split(/(\*\*[^*]+\*\*)/g)
+    .map((part, index) => {
+      if (part.startsWith("**") && part.endsWith("**") && part.length > 4) {
+        return <strong key={`b-${index}`}>{part.slice(2, -2)}</strong>;
+      }
+      return <React.Fragment key={`t-${index}`}>{part}</React.Fragment>;
+    });
 
 export const formatoDescripcion = (descripcion) => {
   if (!descripcion) {
@@ -7,31 +17,38 @@ export const formatoDescripcion = (descripcion) => {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-1">
       {descripcion.split("\n").map((line, index) => {
-        const isSection = line.trim().startsWith("**") && line.trim().endsWith("**");
+        const trimmed = line.trim();
+        if (!trimmed) {
+          // Respetar salto de parrafo intencional
+          return <div key={index} className="h-4" />;
+        }
+
+        const isSection = trimmed.startsWith("**") && trimmed.endsWith("**");
         const isBullet =
-          line.trim().startsWith("-") ||
-          line.trim().startsWith("*") ||
-          line.trim().startsWith("•");
+          trimmed.startsWith("-") ||
+          trimmed.startsWith("*") ||
+          trimmed.startsWith("•");
 
         if (isSection) {
           return (
-            <h3 key={index} className="text-base font-semibold text-black mt-4">
-              {line.replace(/\*\*/g, "").trim()}
+            <h3 key={index} className="text-base font-semibold text-black mt-2 mb-1">
+              {trimmed.replace(/\*\*/g, "").trim()}
             </h3>
           );
         } else if (isBullet) {
+          const bulletText = trimmed.replace(/^[-*•]\s*/, "").trim();
           return (
             <div key={index} className="flex items-start gap-2">
-              <Dot className="w-5 h-5 text-black mt-1" />
-              <span className="text-gray-700">{line.replace(/^[-*•]\s*/, "").trim()}</span>
+              <span className="text-gray-700 leading-6 mt-[1px]">•</span>
+              <span className="text-gray-700 leading-6">{renderInlineBold(bulletText)}</span>
             </div>
           );
         } else {
           return (
-            <p key={index} className="text-gray-600">
-              {line}
+            <p key={index} className="text-gray-600 leading-6">
+              {renderInlineBold(line)}
             </p>
           );
         }
