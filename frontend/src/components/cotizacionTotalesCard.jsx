@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import DiscountCode from "@/components/DiscountCode";
+import DiscountCode from "@/components/discountCode";
 
 export function CotizacionTotalesCard({
   // valores

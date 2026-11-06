@@ -1,12 +1,8 @@
 from fastapi import FastAPI
-from app.db.database import engine, Base
 from app.core.config import settings
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(title=settings.PROJECT_NAME, version=settings.PROJECT_VERSION)
-
-# Solo para desarrollo (puedes quitar si usas Alembic)
-Base.metadata.create_all(bind=engine)
 
 from app.routes.vendedores import router as vendedores_router
 app.include_router(vendedores_router)
@@ -45,7 +41,12 @@ app.include_router(cotizacion_versiones_router)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # ✅ tu frontend
+    allow_origins=settings.allowed_origins,
+    allow_origin_regex=(
+        r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$"
+        if settings.ENVIRONMENT.lower() == "development"
+        else None
+    ),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -2,11 +2,13 @@
 import { useState, useRef, useEffect } from "react"
 import { Menu, MessageSquare, User, Settings, LogOut, ChevronDown } from "lucide-react"
 import { useAuth } from "@/context/AuthContext";
+import { useRouter } from "next/navigation";
 
 export default function AdminHeader({ sidebarCollapsed, showMobileSidebar, setShowMobileSidebar }) {
   const [showUserDropdown, setShowUserDropdown] = useState(false)
   const dropdownRef = useRef(null)
   const { vendedor, logout } = useAuth();
+  const router = useRouter();
   // Cerrar dropdown al hacer click fuera
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -24,8 +26,7 @@ export default function AdminHeader({ sidebarCollapsed, showMobileSidebar, setSh
 
 
   const handleProfileSettings = () => {
-    // Aquí iría la navegación a configuración de perfil
-    console.log("Opening profile settings...")
+    router.push("/adminPanel/personal-info")
     setShowUserDropdown(false)
   }
 

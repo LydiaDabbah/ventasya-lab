@@ -6,6 +6,7 @@ import { useCart } from "@/context/CartContext";
 import { formatoDescripcion } from "@/utils/formatoDescripcion";
 import { ArrowLeft } from "lucide-react";
 import { useVolverAlCatalogo } from "@/hooks/useVolverAlCatalogo";
+import { useVendedor } from "@/context/VendedorContext";
 
 export default function ProductDetailPage() {
   const { producto, imagenesAdicionales, datosAdicionales, loading } =
@@ -19,6 +20,7 @@ export default function ProductDetailPage() {
   } = useCart();
 
   const { volverAlCatalogo } = useVolverAlCatalogo();
+  const { vendedor } = useVendedor();
 
   const [selectedImage, setSelectedImage] = useState(0);
   const [quantity, setQuantity] = useState(1);
@@ -27,6 +29,7 @@ export default function ProductDetailPage() {
   const [showGalleryModal, setShowGalleryModal] = useState(false);
   const [gallerySelectedImage, setGallerySelectedImage] = useState(0);
   const [isCartActionAnimating, setIsCartActionAnimating] = useState(false);
+  const [selectedOptions, setSelectedOptions] = useState({});
 
   const idProd = useMemo(
     () => (producto?.id_producto ? String(producto.id_producto) : ""),
@@ -37,6 +40,20 @@ export default function ProductDetailPage() {
     () => producto?.personalizable === true,
     [producto?.personalizable]
   );
+  const options = producto?.opciones || [];
+  const variants = producto?.variantes || [];
+  const selectedVariant = useMemo(() => {
+    if (!options.length || Object.keys(selectedOptions).length !== options.length) return null;
+    return variants.find((variant) =>
+      options.every((option) => variant.opciones?.[option.nombre] === selectedOptions[option.nombre]),
+    ) || null;
+  }, [options, variants, selectedOptions]);
+  const selectedVariantId = selectedVariant?.id_variante ? String(selectedVariant.id_variante) : null;
+  const displayedPrice = selectedVariant?.precio ?? producto?.precio ?? 0;
+  const availableStock = options.length ? Number(selectedVariant?.stock ?? 0) : producto?.stock;
+  const unavailable = options.length
+    ? !selectedVariant || selectedVariant.activo === false || availableStock <= 0
+    : producto?.stock !== null && producto?.stock !== undefined && Number(producto.stock) <= 0;
 
   const productImages = useMemo(() => {
     const main =
@@ -61,18 +78,18 @@ export default function ProductDetailPage() {
 
   const itemEnCarrito = useMemo(() => {
     if (!idProd) return null;
-    return getItemById(idProd);
-  }, [idProd, getItemById]);
+    return getItemById(idProd, selectedVariantId);
+  }, [idProd, selectedVariantId, getItemById]);
 
   useEffect(() => {
     setSelectedImage(0);
+    setSelectedOptions({});
 
-    if (!idProd) {
-      setQuantity(1);
-      setNotaPersonalizada("");
-      return;
-    }
+    setQuantity(1);
+    setNotaPersonalizada("");
+  }, [idProd]);
 
+  useEffect(() => {
     if (itemEnCarrito) {
       setQuantity(Number(itemEnCarrito.cantidad || 1));
       setNotaPersonalizada(itemEnCarrito.nota_personalizable || "");
@@ -80,7 +97,7 @@ export default function ProductDetailPage() {
       setQuantity(1);
       setNotaPersonalizada("");
     }
-  }, [idProd, itemEnCarrito]);
+  }, [itemEnCarrito]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -138,7 +155,7 @@ export default function ProductDetailPage() {
   const formatearPrecio = (precio) =>
     Number(precio || 0).toLocaleString("es-MX", {
       style: "currency",
-      currency: "MXN",
+      currency: vendedor?.moneda || "MXN",
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     });
@@ -167,7 +184,8 @@ export default function ProductDetailPage() {
   const increaseQuantity = () => {
     setQuantity((prev) => {
       const current = Number(prev || 0);
-      return Math.min(99, current + 1);
+      const max = availableStock === null || availableStock === undefined ? 99 : Math.min(99, Number(availableStock));
+      return Math.min(max, current + 1);
     });
   };
 
@@ -192,7 +210,8 @@ export default function ProductDetailPage() {
   };
 
   const handleQuantityBlur = () => {
-    const normalized = quantity === "" || Number(quantity) < 1 ? 1 : Math.min(99, Number(quantity));
+    const max = availableStock === null || availableStock === undefined ? 99 : Math.min(99, Number(availableStock));
+    const normalized = quantity === "" || Number(quantity) < 1 ? 1 : Math.min(max, Number(quantity));
     setQuantity(normalized);
   };
 
@@ -234,12 +253,12 @@ export default function ProductDetailPage() {
     const wasInCart = Boolean(itemEnCarrito);
 
     if (itemEnCarrito) {
-      updateQuantity(idProd, target);
+      updateQuantity(idProd, target, selectedVariantId);
 
       if (personalizable) {
-        updateNotaPersonalizable(idProd, clean.length ? clean : null);
+        updateNotaPersonalizable(idProd, clean.length ? clean : null, selectedVariantId);
       } else {
-        updateNotaPersonalizable(idProd, null);
+        updateNotaPersonalizable(idProd, null, selectedVariantId);
       }
 
       triggerCartFeedback();
@@ -248,18 +267,21 @@ export default function ProductDetailPage() {
 
     addItem({
       id_producto: idProd,
+      id_variante: selectedVariantId,
+      nombre_variante: selectedVariant ? Object.values(selectedVariant.opciones || {}).join(" / ") : null,
+      opciones_variante: selectedVariant?.opciones || null,
       nombre: producto?.nombre ?? "",
-      precio: Number(producto?.precio ?? 0),
-      imagen_url: producto?.imagen_url ?? null,
+      precio: Number(displayedPrice),
+      imagen_url: selectedVariant?.imagen_url || producto?.imagen_url || null,
       personalizable: producto?.personalizable === true,
     });
 
-    updateQuantity(idProd, target);
+    updateQuantity(idProd, target, selectedVariantId);
 
     if (personalizable) {
-      updateNotaPersonalizable(idProd, clean.length ? clean : null);
+      updateNotaPersonalizable(idProd, clean.length ? clean : null, selectedVariantId);
     } else {
-      updateNotaPersonalizable(idProd, null);
+      updateNotaPersonalizable(idProd, null, selectedVariantId);
     }
 
     triggerCartFeedback();
@@ -374,9 +396,38 @@ export default function ProductDetailPage() {
 
             <div className="flex items-center space-x-3">
               <span className="text-2xl font-bold text-black">
-                {formatearPrecio(producto?.precio)}
+                {formatearPrecio(displayedPrice)}
               </span>
             </div>
+
+            {options.map((option) => (
+              <fieldset key={option.id_opcion || option.nombre} className="space-y-2">
+                <legend className="text-sm font-medium text-black">{option.nombre}</legend>
+                <div className="flex flex-wrap gap-2">
+                  {(option.valores || []).map((value) => {
+                    const rawValue = value.valor ?? value;
+                    const selected = selectedOptions[option.nombre] === rawValue;
+                    return (
+                      <button
+                        key={value.id_valor || rawValue}
+                        type="button"
+                        onClick={() => setSelectedOptions((prev) => ({ ...prev, [option.nombre]: rawValue }))}
+                        className={`px-3 py-2 rounded-lg border text-sm ${selected ? "bg-black text-white border-black" : "border-gray-300 hover:border-black"}`}
+                      >
+                        {rawValue}
+                      </button>
+                    );
+                  })}
+                </div>
+              </fieldset>
+            ))}
+
+            {options.length > 0 && Object.keys(selectedOptions).length < options.length && (
+              <p className="text-sm text-amber-700">Selecciona todas las opciones para continuar.</p>
+            )}
+            {selectedVariant && selectedVariant.stock <= 0 && (
+              <p className="text-sm text-red-600">Esta combinación está agotada.</p>
+            )}
 
           
 
@@ -450,6 +501,7 @@ export default function ProductDetailPage() {
                 <button
                   type="button"
                   onClick={increaseQuantity}
+                  disabled={unavailable || (availableStock != null && Number(quantity) >= Number(availableStock))}
                   className="w-7 h-7 flex items-center justify-center rounded-md bg-black hover:bg-gray-800 text-white transition-colors"
                   aria-label="Aumentar cantidad"
                 >
@@ -475,11 +527,12 @@ export default function ProductDetailPage() {
               <button
                 type="button"
                 onClick={handleAddToCart}
+                disabled={unavailable}
                 className={`w-full bg-black text-white px-6 py-3 rounded-md font-medium text-sm hover:bg-gray-800 transition-all ${
                   isCartActionAnimating ? "scale-[0.99]" : "scale-100"
-                }`}
+                } disabled:opacity-40 disabled:cursor-not-allowed`}
               >
-                {itemEnCarrito ? "Actualizar carrito" : "Agregar al carrito"}
+                {unavailable ? "No disponible" : itemEnCarrito ? "Actualizar carrito" : "Agregar al carrito"}
               </button>
             </div>
           </div>

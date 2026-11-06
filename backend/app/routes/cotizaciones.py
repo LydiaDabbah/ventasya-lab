@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
 import secrets
+import logging
 
 from app.core.money import money
 from app.db.database import SessionLocal
@@ -14,8 +15,12 @@ from app.models.cotizacion import Cotizacion
 from app.models.cotizacion_version import CotizacionVersion
 from app.models.detalle_cotizacion_version import DetalleCotizacionVersion
 from app.models.codigo_descuento import CodigoDescuento
+from app.models.product_variant import ProductVariant, ProductOptionValue
+from sqlalchemy.orm import selectinload
+from app.core.auth import get_current_vendedor, get_optional_vendedor, require_vendedor_id
 
 router = APIRouter(prefix="/cotizaciones", tags=["Cotizaciones"])
+logger = logging.getLogger("uvicorn.error")
 
 
 # -----------------------
@@ -23,6 +28,7 @@ router = APIRouter(prefix="/cotizaciones", tags=["Cotizaciones"])
 # -----------------------
 class ProductoPedido(BaseModel):
     id_producto: str
+    id_variante: Optional[str] = None
     cantidad: int = Field(..., gt=0)
     precio_unitario: Optional[float] = None
     nombre_producto: Optional[str] = None
@@ -61,8 +67,7 @@ def get_db():
 
 
 def generar_numero_cotizacion() -> str:
-    import random
-    return f"COT-{datetime.utcnow().strftime('%Y%m%d')}-{random.randint(1000,9999)}"
+    return f"COT-{datetime.utcnow().strftime('%Y%m%d')}-{secrets.token_hex(3).upper()}"
 
 
 # ---------------------------
@@ -212,6 +217,23 @@ def validar_y_preparar_detalles_db(productos_input: List[dict], id_vendedor_expe
     if faltantes:
         raise HTTPException(status_code=400, detail=f"Productos no encontrados: {faltantes}")
 
+    variant_ids = set()
+    for item in productos_input:
+        if item.get("id_variante"):
+            try:
+                variant_ids.add(UUID_cls(str(item["id_variante"])))
+            except Exception:
+                raise HTTPException(status_code=400, detail=f"id_variante inválido: {item['id_variante']}")
+    variants = db.query(ProductVariant).options(
+        selectinload(ProductVariant.valores).selectinload(ProductOptionValue.opcion)
+    ).filter(ProductVariant.id_variante.in_(variant_ids)).all() if variant_ids else []
+    variants_map = {str(v.id_variante): v for v in variants}
+    requested_by_variant = {}
+    for item in productos_input:
+        if item.get("id_variante"):
+            key = str(item["id_variante"])
+            requested_by_variant[key] = requested_by_variant.get(key, 0) + int(item.get("cantidad", 0))
+
     detalles_payload = []
     for p in productos_input:
         pid = str(p.get("id_producto"))
@@ -231,12 +253,29 @@ def validar_y_preparar_detalles_db(productos_input: List[dict], id_vendedor_expe
         if getattr(prod, "activo", True) is False:
             raise HTTPException(status_code=400, detail=f"Producto inactivo: {pid}")
 
+        variant = None
+        if p.get("id_variante"):
+            variant = variants_map.get(str(p["id_variante"]))
+            if not variant or variant.id_producto != prod.id_producto:
+                raise HTTPException(status_code=400, detail=f"Variante inválida para producto {pid}")
+            if not variant.activo:
+                raise HTTPException(status_code=400, detail=f"Variante inactiva para producto {pid}")
+            if requested_by_variant[str(variant.id_variante)] > int(variant.stock or 0):
+                raise HTTPException(status_code=409, detail=f"Stock insuficiente para {prod.nombre}")
+        elif prod.variantes:
+            raise HTTPException(status_code=400, detail=f"Selecciona una variante para {prod.nombre}")
+        elif prod.stock is not None and cantidad > int(prod.stock):
+            raise HTTPException(status_code=409, detail=f"Stock insuficiente para {prod.nombre}")
+
         # precio: si allow_price_override True y payload trae precio, respetar (admin),
         # en caso contrario tomar precio de DB
         if allow_price_override and p.get("precio_unitario") is not None:
             precio_unitario = float(p.get("precio_unitario"))
         else:
-            precio_unitario = float(getattr(prod, "precio", 0.0) or 0.0)
+            precio_unitario = float(variant.precio if variant and variant.precio is not None else (getattr(prod, "precio", 0.0) or 0.0))
+
+        opciones_variante = {value.opcion.nombre: value.valor for value in variant.valores} if variant else None
+        nombre_variante = " / ".join(opciones_variante.values()) if opciones_variante else None
 
         personalizable = bool(getattr(prod, "personalizable", False))
         nota_personalizable = p.get("nota_personalizable")
@@ -247,12 +286,16 @@ def validar_y_preparar_detalles_db(productos_input: List[dict], id_vendedor_expe
 
         detalles_payload.append({
             "id_producto": prod.id_producto,
+            "id_variante": variant.id_variante if variant else None,
             "nombre_producto": p.get("nombre_producto") or prod.nombre,
             "precio_unitario": precio_unitario,
             "cantidad": cantidad,
             "subtotal": subtotal_item,
             "nota_personalizable": nota_personalizable,
             "personalizable": personalizable,
+            "nombre_variante": nombre_variante,
+            "opciones_variante": opciones_variante,
+            "sku_variante": variant.sku if variant else None,
         })
 
     return detalles_payload
@@ -262,14 +305,11 @@ def validar_y_preparar_detalles_db(productos_input: List[dict], id_vendedor_expe
 # LISTAR COTIZACIONES (opcional filtro por id_vendedor)
 # -----------------------
 @router.get("/", response_model=List[Dict[str, Any]])
-def listar_cotizaciones(id_vendedor: Optional[str] = Query(None), db: Session = Depends(get_db)):
-    q = db.query(Cotizacion)
-    if id_vendedor:
-        try:
-            id_vend_uuid = UUID_cls(str(id_vendedor))
-        except Exception:
-            raise HTTPException(status_code=400, detail="id_vendedor inválido (debe ser UUID)")
-        q = q.filter(Cotizacion.id_vendedor == id_vend_uuid)
+def listar_cotizaciones(id_vendedor: Optional[str] = Query(None), db: Session = Depends(get_db), auth=Depends(get_current_vendedor)):
+    seller_id = require_vendedor_id(auth)
+    if id_vendedor and str(seller_id) != str(id_vendedor):
+        raise HTTPException(status_code=403, detail="No autorizado")
+    q = db.query(Cotizacion).filter(Cotizacion.id_vendedor == seller_id)
 
     if hasattr(Cotizacion, "created_at"):
         cotizaciones = q.order_by(getattr(Cotizacion, "created_at").desc()).all()
@@ -304,6 +344,10 @@ def listar_cotizaciones(id_vendedor: Optional[str] = Query(None), db: Session = 
                     "id_detalle_version": str(d.id_detalle_version),
                     "id_producto": pid_str,
                     "nombre_producto": d.nombre_producto,
+                    "id_variante": str(d.id_variante) if d.id_variante else None,
+                    "nombre_variante": d.nombre_variante,
+                    "opciones_variante": d.opciones_variante,
+                    "sku_variante": d.sku_variante,
                     "precio_unitario": float(d.precio_unitario),
                     "nota_personalizable": d.nota_personalizable,
                     "cantidad": int(d.cantidad),
@@ -349,6 +393,7 @@ def actualizar_status_cotizacion(
     payload: CotizacionStatusUpdate,
     id_vendedor: Optional[str] = Query(None),
     db: Session = Depends(get_db),
+    auth=Depends(get_current_vendedor),
 ):
     try:
         cot_uuid = UUID_cls(str(id_cotizacion))
@@ -359,13 +404,8 @@ def actualizar_status_cotizacion(
     if not cot:
         raise HTTPException(status_code=404, detail="Cotización no encontrada")
 
-    if id_vendedor:
-        try:
-            vend_uuid = UUID_cls(str(id_vendedor))
-        except Exception:
-            raise HTTPException(status_code=400, detail="id_vendedor inválido")
-        if str(cot.id_vendedor) != str(vend_uuid):
-            raise HTTPException(status_code=403, detail="No autorizado para modificar esta cotización")
+    if cot.id_vendedor != require_vendedor_id(auth):
+        raise HTTPException(status_code=403, detail="No autorizado para modificar esta cotización")
 
     cot.status = _norm_status(payload.status)
     if "updated_at" in Cotizacion.__table__.columns:
@@ -466,11 +506,15 @@ def crear_cotizacion(data: CotizacionRequest, db: Session = Depends(get_db)):
     id_detalle_version=uuid4(),
     id_version=version.id_version,
     id_producto=it["id_producto"],
+    id_variante=it["id_variante"],
     nombre_producto=it["nombre_producto"],
     precio_unitario=it["precio_unitario"],
     cantidad=it["cantidad"],
     subtotal=it["subtotal"],
-    nota_personalizable=it.get("nota_personalizable")
+    nota_personalizable=it.get("nota_personalizable"),
+    nombre_variante=it.get("nombre_variante"),
+    opciones_variante=it.get("opciones_variante"),
+    sku_variante=it.get("sku_variante")
 )
             db.add(detalle)
             detalles_created.append(detalle)
@@ -491,9 +535,10 @@ def crear_cotizacion(data: CotizacionRequest, db: Session = Depends(get_db)):
         for d in detalles_created:
             db.refresh(d)
 
-    except Exception as e:
+    except Exception:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"Error creando cotización: {str(e)}")
+        logger.exception("Error creando cotización")
+        raise HTTPException(status_code=500, detail="No se pudo crear la cotización")
 
     # --- enriquecer productos_out con imagen_url (query en batch)
     productos_out = []
@@ -516,6 +561,10 @@ def crear_cotizacion(data: CotizacionRequest, db: Session = Depends(get_db)):
                 "id_detalle_version": str(d.id_detalle_version),
                 "id_producto": str(d.id_producto),
                 "nombre_producto": d.nombre_producto,
+                "id_variante": str(d.id_variante) if d.id_variante else None,
+                "nombre_variante": d.nombre_variante,
+                "opciones_variante": d.opciones_variante,
+                "sku_variante": d.sku_variante,
                 "precio_unitario": float(d.precio_unitario),
                 "cantidad": int(d.cantidad),
                 **({"subtotal": float(d.subtotal)} if hasattr(d, "subtotal") else {}),
@@ -555,10 +604,13 @@ def crear_cotizacion(data: CotizacionRequest, db: Session = Depends(get_db)):
 #  GET  Buscar cotización por numero_cotizacion (con imagen_url embebida)
 # =====================================
 @router.get("/numero/{numero_cotizacion}", response_model=Dict[str, Any])
-def obtener_cotizacion(numero_cotizacion: str, db: Session = Depends(get_db)):
+def obtener_cotizacion(numero_cotizacion: str, token: Optional[str] = Query(None), db: Session = Depends(get_db), auth=Depends(get_optional_vendedor)):
     cot = db.query(Cotizacion).filter(Cotizacion.numero_cotizacion == numero_cotizacion).first()
     if not cot:
         raise HTTPException(status_code=404, detail="Cotización no encontrada")
+    is_owner = bool(auth and require_vendedor_id(auth) == cot.id_vendedor)
+    if not is_owner and (not token or not secrets.compare_digest(cot.editable_token or "", token)):
+        raise HTTPException(status_code=403, detail="No autorizado para ver esta cotización")
 
     if not cot.current_version_id:
         raise HTTPException(status_code=500, detail="Cotización sin versión activa")
@@ -614,6 +666,10 @@ def obtener_cotizacion(numero_cotizacion: str, db: Session = Depends(get_db)):
                 "id_detalle_version": str(d.id_detalle_version),
                 "id_producto": pid_str,
                 "nombre_producto": d.nombre_producto,
+                "id_variante": str(d.id_variante) if d.id_variante else None,
+                "nombre_variante": d.nombre_variante,
+                "opciones_variante": d.opciones_variante,
+                "sku_variante": d.sku_variante,
                 "precio_unitario": float(d.precio_unitario),
                 "nota_personalizable": d.nota_personalizable,
                 "precio_db": precio_db,               # opcional: precio almacenado en tabla productos
@@ -658,18 +714,18 @@ def obtener_cotizacion(numero_cotizacion: str, db: Session = Depends(get_db)):
         "productos": productos,
         "current_version_id": str(version.id_version),
 
-        # token solo informativo
-        "editable_token": cot.editable_token,
         "editable_token_active": bool(cot.editable_token_active),
     }
 # =====================================
 #  PUT  Editar cotización existente (ADMIN: crea nueva versión — permite overrides)
 # =====================================
 @router.put("/numero/{numero_cotizacion}", response_model=Dict[str, Any])
-def actualizar_cotizacion(numero_cotizacion: str, data: CotizacionRequest, db: Session = Depends(get_db)):
+def actualizar_cotizacion(numero_cotizacion: str, data: CotizacionRequest, db: Session = Depends(get_db), auth=Depends(get_current_vendedor)):
     cot = db.query(Cotizacion).filter(Cotizacion.numero_cotizacion == numero_cotizacion).first()
     if not cot:
         raise HTTPException(status_code=404, detail="Cotización no encontrada")
+    if cot.id_vendedor != require_vendedor_id(auth):
+        raise HTTPException(status_code=403, detail="No autorizado")
 
     if not data.productos or len(data.productos) == 0:
         raise HTTPException(status_code=400, detail="Productos vacíos")
@@ -735,11 +791,15 @@ def actualizar_cotizacion(numero_cotizacion: str, data: CotizacionRequest, db: S
     id_detalle_version=uuid4(),
     id_version=version.id_version,
     id_producto=it["id_producto"],
+    id_variante=it["id_variante"],
     nombre_producto=it["nombre_producto"],
     precio_unitario=it["precio_unitario"],
     cantidad=it["cantidad"],
     subtotal=it["subtotal"],
-    nota_personalizable=it.get("nota_personalizable")
+    nota_personalizable=it.get("nota_personalizable"),
+    nombre_variante=it.get("nombre_variante"),
+    opciones_variante=it.get("opciones_variante"),
+    sku_variante=it.get("sku_variante")
 )
             db.add(detalle)
             detalles_created.append(detalle)
@@ -757,9 +817,10 @@ def actualizar_cotizacion(numero_cotizacion: str, data: CotizacionRequest, db: S
         for d in detalles_created:
             db.refresh(d)
 
-    except Exception as e:
+    except Exception:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"Error actualizando cotización: {str(e)}")
+        logger.exception("Error actualizando cotización")
+        raise HTTPException(status_code=500, detail="No se pudo actualizar la cotización")
 
     # enriquecer productos_out con imagen_url
     productos_out = []
@@ -782,6 +843,10 @@ def actualizar_cotizacion(numero_cotizacion: str, data: CotizacionRequest, db: S
                 "id_detalle_version": str(d.id_detalle_version),
                 "id_producto": str(d.id_producto),
                 "nombre_producto": d.nombre_producto,
+                "id_variante": str(d.id_variante) if d.id_variante else None,
+                "nombre_variante": d.nombre_variante,
+                "opciones_variante": d.opciones_variante,
+                "sku_variante": d.sku_variante,
                 "precio_unitario": float(d.precio_unitario),
                 "cantidad": int(d.cantidad),
                 **({"subtotal": float(d.subtotal)} if hasattr(d, "subtotal") else {}),
@@ -918,11 +983,15 @@ def editar_cotizacion_por_token_query(
                 id_detalle_version=uuid4(),
                 id_version=version.id_version,
                 id_producto=it["id_producto"],
+                id_variante=it["id_variante"],
                 nombre_producto=it["nombre_producto"],
                 precio_unitario=it["precio_unitario"],
                 cantidad=it["cantidad"],
                 subtotal=it["subtotal"],
-                nota_personalizable=it.get("nota_personalizable")
+                nota_personalizable=it.get("nota_personalizable"),
+                nombre_variante=it.get("nombre_variante"),
+                opciones_variante=it.get("opciones_variante"),
+                sku_variante=it.get("sku_variante")
             )
             db.add(detalle)
             detalles_created.append(detalle)
@@ -945,9 +1014,10 @@ def editar_cotizacion_por_token_query(
         for d in detalles_created:
             db.refresh(d)
 
-    except Exception as e:
+    except Exception:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"Error creando nueva versión por token: {str(e)}")
+        logger.exception("Error creando versión de cotización")
+        raise HTTPException(status_code=500, detail="No se pudo actualizar la cotización")
 
     # enriquecer productos_out con imagen_url
     productos_out = []
@@ -970,6 +1040,10 @@ def editar_cotizacion_por_token_query(
                 "id_detalle_version": str(d.id_detalle_version),
                 "id_producto": str(d.id_producto),
                 "nombre_producto": d.nombre_producto,
+                "id_variante": str(d.id_variante) if d.id_variante else None,
+                "nombre_variante": d.nombre_variante,
+                "opciones_variante": d.opciones_variante,
+                "sku_variante": d.sku_variante,
                 "precio_unitario": float(d.precio_unitario),
                 "cantidad": int(d.cantidad),
                 **({"subtotal": float(d.subtotal)} if hasattr(d, "subtotal") else {}),

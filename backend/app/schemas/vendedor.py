@@ -2,6 +2,7 @@ from datetime import datetime
 from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field, ConfigDict, field_validator
+from typing import Optional
 
 from app.enums.moneda import MonedaEnum
 
@@ -33,6 +34,14 @@ class VendedorPasswordUpdate(BaseModel):
     email: EmailStr
     old_password: str
     new_password: str
+
+
+class VendedorUpdate(BaseModel):
+    nombre: Optional[str] = Field(default=None, min_length=1)
+    telefono: Optional[str] = Field(default=None, min_length=7)
+    email: Optional[EmailStr] = None
+    nombre_negocio: Optional[str] = Field(default=None, min_length=1)
+    moneda: Optional[MonedaEnum] = None
 
 
 class VendedorOut(BaseModel):

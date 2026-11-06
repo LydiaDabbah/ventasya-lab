@@ -27,9 +27,9 @@ export default function CartSheet({ isOpen, onClose }) {
     router.push(`/${clave}/cotizacion`);
   };
 
-  const handleCantidadChange = (idProducto, value) => {
+  const handleCantidadChange = (idProducto, idVariante, value) => {
     if (value === "") {
-      updateQuantity(idProducto, "");
+      updateQuantity(idProducto, "", idVariante);
       return;
     }
 
@@ -38,16 +38,16 @@ export default function CartSheet({ isOpen, onClose }) {
     const numericValue = Number(value);
 
     if (numericValue > 99) {
-      updateQuantity(idProducto, 99);
+      updateQuantity(idProducto, 99, idVariante);
       return;
     }
 
-    updateQuantity(idProducto, numericValue);
+    updateQuantity(idProducto, numericValue, idVariante);
   };
 
-  const handleCantidadBlur = (idProducto, cantidadActual) => {
+  const handleCantidadBlur = (idProducto, idVariante, cantidadActual) => {
     if (cantidadActual === "" || Number(cantidadActual) < 1) {
-      updateQuantity(idProducto, 1);
+      updateQuantity(idProducto, 1, idVariante);
     }
   };
 
@@ -77,7 +77,7 @@ export default function CartSheet({ isOpen, onClose }) {
             <div className="space-y-4">
               {items.map((item) => {
                 return (
-                  <div key={item.id_producto} className="flex gap-3 border-b pb-4">
+                  <div key={item.cart_key || `${item.id_producto}-${item.id_variante || "base"}`} className="flex gap-3 border-b pb-4">
                     <div className="relative w-20 h-20 flex-shrink-0">
                       <Image
                         src={item.imagen_url || "/placeholder.svg"}
@@ -92,6 +92,8 @@ export default function CartSheet({ isOpen, onClose }) {
                         <h3 className="font-medium text-sm truncate">{item.nombre_producto}</h3>
                       </div>
 
+                      {item.nombre_variante && <p className="text-xs text-gray-500 mt-0.5">{item.nombre_variante}</p>}
+
                       <p className="text-sm text-gray-600 mt-1">
                         $
                         {Number(item.precio_unitario || 0).toLocaleString("es-MX", {
@@ -103,7 +105,7 @@ export default function CartSheet({ isOpen, onClose }) {
                         {/* BOTÓN - o BASURA */}
                         <button
                           onClick={() =>
-                            updateQuantity(item.id_producto, Number(item.cantidad || 0) - 1)
+                            updateQuantity(item.id_producto, Number(item.cantidad || 0) - 1, item.id_variante)
                           }
                           className={`w-7 h-7 flex items-center justify-center rounded transition-colors ${
                             Number(item.cantidad) === 1
@@ -125,10 +127,10 @@ export default function CartSheet({ isOpen, onClose }) {
                           pattern="[0-9]*"
                           value={item.cantidad}
                           onChange={(e) =>
-                            handleCantidadChange(item.id_producto, e.target.value)
+                            handleCantidadChange(item.id_producto, item.id_variante, e.target.value)
                           }
                           onBlur={() =>
-                            handleCantidadBlur(item.id_producto, item.cantidad)
+                            handleCantidadBlur(item.id_producto, item.id_variante, item.cantidad)
                           }
                           className="w-10 text-center text-sm font-semibold text-black bg-transparent border-none outline-none"
                         />
@@ -136,7 +138,7 @@ export default function CartSheet({ isOpen, onClose }) {
                         {/* BOTÓN + */}
                         <button
                           onClick={() =>
-                            updateQuantity(item.id_producto, Number(item.cantidad || 0) + 1)
+                            updateQuantity(item.id_producto, Number(item.cantidad || 0) + 1, item.id_variante)
                           }
                           className="w-7 h-7 flex items-center justify-center rounded bg-black text-white hover:bg-gray-800 transition-colors"
                         >

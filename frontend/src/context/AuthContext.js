@@ -1,13 +1,12 @@
 "use client";
 import { createContext, useContext, useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
 
 const AuthContext = createContext();
 
 export function AuthProvider({ children }) {
   const [vendedor, setVendedor] = useState(null);
   const [loading, setLoading] = useState(true);
-  const router = useRouter();
+  const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
   useEffect(() => {
     const token = localStorage.getItem("token") || sessionStorage.getItem("token");
@@ -16,30 +15,27 @@ export function AuthProvider({ children }) {
       return;
     }
 
-    // Decodifica el token para obtener la clave
-    const payload = JSON.parse(atob(token.split('.')[1]));
-    const clave = payload.clave;
-
     const fetchVendedor = async () => {
       try {
-        const res = await fetch(`http://localhost:8000/vendedores/clave/${clave}`);
+        const res = await fetch(`${API}/vendedores/me`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
         if (res.ok) {
           const data = await res.json();
           setVendedor(data);
         } else {
-          console.log("Token inválido o vendedor no encontrado, redirigiendo a login");
           localStorage.removeItem("token");
           sessionStorage.removeItem("token");
           window.location.href = "/login";
         }
       } catch (error) {
-        console.error("Error en fetch vendedor:", error);
+        console.error("No se pudo validar la sesión:", error);
       }
       setLoading(false);
     };
 
     fetchVendedor();
-  }, []);
+  }, [API]);
 
   const logout = () => {
     localStorage.removeItem("token");
@@ -49,7 +45,7 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ vendedor, loading, logout }}>
+    <AuthContext.Provider value={{ vendedor, setVendedor, loading, logout }}>
       {children}
     </AuthContext.Provider>
   );

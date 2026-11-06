@@ -6,6 +6,8 @@ import { validateCodigo } from "@/utils/validateCodigo";
 import { getCodigoById } from "@/utils/getCodigoById";
 
 const CotizacionContext = createContext(null);
+const sameLine = (item, productId, variantId = null) =>
+  String(item.id_producto) === String(productId) && String(item.id_variante || "") === String(variantId || "");
 
 export function useCotizacion() {
   const ctx = useContext(CotizacionContext);
@@ -76,11 +78,20 @@ export function CotizacionProvider({ children, numeroCotizacion = null, token = 
         setLoading(true);
         setError(null);
 
-        const res = await fetch(`${API}/cotizaciones/numero/${encodeURIComponent(numero)}`);
+        const query = tokenRef.current ? `?token=${encodeURIComponent(tokenRef.current)}` : "";
+        const storedToken = typeof window !== "undefined" ? (localStorage.getItem("token") || sessionStorage.getItem("token")) : null;
+        const res = await fetch(`${API}/cotizaciones/numero/${encodeURIComponent(numero)}${query}`, {
+          headers: storedToken ? { Authorization: `Bearer ${storedToken}` } : {},
+        });
 
         if (!res.ok) {
           if (res.status === 404) router.replace("/404");
-          return;
+          let message = "No se pudo cargar la cotización";
+          try {
+            const body = await res.json();
+            message = body?.detail || message;
+          } catch {}
+          throw new Error(message);
         }
 
         const data = await res.json();
@@ -105,7 +116,6 @@ export function CotizacionProvider({ children, numeroCotizacion = null, token = 
 
         if (
           tokenRef.current &&
-          data?.editable_token === tokenRef.current &&
           data?.editable_token_active !== false &&
           isPending
         ) {
@@ -128,14 +138,14 @@ export function CotizacionProvider({ children, numeroCotizacion = null, token = 
   // =============================
   // MUTACIONES
   // =============================
-  const updateCantidad = (id_producto, nuevaCantidad) => {
+  const updateCantidad = (id_producto, nuevaCantidad, id_variante = null) => {
     const qty = Math.max(1, Number(nuevaCantidad || 1));
 
     setCotizacion((prev) => {
       if (!prev) return prev;
 
       const productos = (prev.productos || []).map((p) =>
-        String(p.id_producto) === String(id_producto)
+        sameLine(p, id_producto, id_variante)
           ? {
               ...p,
               cantidad: qty,
@@ -150,24 +160,24 @@ export function CotizacionProvider({ children, numeroCotizacion = null, token = 
     });
   };
 
-  const eliminarProducto = (id_producto) => {
+  const eliminarProducto = (id_producto, id_variante = null) => {
     setCotizacion((prev) => {
       if (!prev) return prev;
 
       const productos = (prev.productos || []).filter(
-        (p) => String(p.id_producto) !== String(id_producto)
+        (p) => !sameLine(p, id_producto, id_variante)
       );
 
       return { ...prev, productos };
     });
   };
 
-  const updateNotaPersonalizable = (id_producto, nota) => {
+  const updateNotaPersonalizable = (id_producto, nota, id_variante = null) => {
     setCotizacion((prev) => {
       if (!prev) return prev;
 
       const productos = (prev.productos || []).map((p) =>
-        String(p.id_producto) === String(id_producto)
+        sameLine(p, id_producto, id_variante)
           ? { ...p, nota_personalizable: nota ?? null }
           : p
       );
@@ -196,7 +206,8 @@ export function CotizacionProvider({ children, numeroCotizacion = null, token = 
       const precio_unitario = Number(producto?.precio_unitario ?? producto?.precio ?? 0);
 
       const prevProductos = prev?.productos || [];
-      const idx = prevProductos.findIndex((p) => String(p.id_producto) === pid);
+      const variantId = producto?.id_variante || null;
+      const idx = prevProductos.findIndex((p) => sameLine(p, pid, variantId));
 
       if (idx >= 0) {
         const existente = prevProductos[idx];
@@ -221,6 +232,9 @@ export function CotizacionProvider({ children, numeroCotizacion = null, token = 
 
       const nuevo = {
         id_producto: producto?.id_producto,
+        id_variante: variantId,
+        nombre_variante: producto?.nombre_variante || null,
+        opciones_variante: producto?.opciones_variante || null,
         imagen_url,
         nombre_producto,
         precio_unitario,
@@ -344,6 +358,7 @@ export function CotizacionProvider({ children, numeroCotizacion = null, token = 
 
         productos: (cotizacion.productos || []).map((p) => ({
           id_producto: p.id_producto,
+          id_variante: p.id_variante || null,
           cantidad: p.cantidad,
           precio_unitario: p.precio_unitario,
           nombre_producto: p.nombre_producto,

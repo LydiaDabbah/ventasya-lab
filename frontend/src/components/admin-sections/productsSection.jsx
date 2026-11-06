@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Search, X, Upload, Funnel, Pencil, Trash2, ChevronDown, Check, Plus, Sparkles, Star } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { formatoDescripcion } from "@/utils/formatoDescripcion";
+import { authHeaders } from "@/utils/api";
+import ProductVariantsEditor from "@/components/admin-sections/ProductVariantsEditor";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -22,6 +24,9 @@ const defaultForm = {
   categorias: [],
   activo: true,
   personalizable: false,
+  stock: "",
+  opciones: [],
+  variantes: [],
   datos_adicionales: {
     detalles: "",
     envio: "",
@@ -172,7 +177,7 @@ export default function ProductsSection() {
 
       try {
         const [productosRes, categoriasRes, relacionesRes] = await Promise.all([
-          fetch(`${API_BASE}/productos/?id_vendedor=${encodeURIComponent(vendedor.id_vendedor)}`, { signal: controller.signal }),
+          fetch(`${API_BASE}/productos/?id_vendedor=${encodeURIComponent(vendedor.id_vendedor)}`, { signal: controller.signal, headers: authHeaders() }),
           fetch(`${API_BASE}/categorias/por-vendedor/${encodeURIComponent(vendedor.id_vendedor)}`, { signal: controller.signal }),
           fetch(`${API_BASE}/producto-categorias/por-vendedor/${encodeURIComponent(vendedor.id_vendedor)}`, { signal: controller.signal }),
         ]);
@@ -327,6 +332,9 @@ export default function ProductsSection() {
         categorias: producto.categorias || [],
         activo: Boolean(producto.activo),
         personalizable: Boolean(producto.personalizable),
+        stock: producto.stock ?? "",
+        opciones: (producto.opciones || []).map((option) => ({ nombre: option.nombre, valores: (option.valores || []).map((value) => value.valor) })),
+        variantes: producto.variantes || [],
         datos_adicionales: datosAdicionales,
       });
       setImagenesSeleccionadas(imagenes);
@@ -439,7 +447,7 @@ export default function ProductsSection() {
     try {
       const res = await fetch("/api/ai/mejorar-texto", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders(),
         body: JSON.stringify({
           text: original,
           context: tipo,
@@ -629,7 +637,7 @@ export default function ProductsSection() {
     try {
       const res = await fetch(`${API_BASE}/categorias/`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders(),
         body: JSON.stringify({
           id_vendedor: vendedor.id_vendedor,
           nombre: limpio,
@@ -694,12 +702,15 @@ export default function ProductsSection() {
           imagen_url: principalUrl,
           activo: Boolean(formData.activo),
           personalizable: Boolean(formData.personalizable),
+          stock: formData.stock === "" ? null : Number(formData.stock),
+          opciones: formData.opciones,
+          variantes: formData.variantes,
           categorias_ids: selectedCategoryIds,
         };
 
         const updateRes = await fetch(`${API_BASE}/productos/${encodeURIComponent(editandoId)}`, {
           method: "PUT",
-          headers: { "Content-Type": "application/json" },
+          headers: authHeaders(),
           body: JSON.stringify(updatePayload),
         });
 
@@ -722,7 +733,7 @@ export default function ProductsSection() {
             imagenesSecundariasNuevas.map((img, index) =>
               fetch(`${API_BASE}/imagenes/`, {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: authHeaders(),
                 body: JSON.stringify({
                   id_producto: String(updated.id_producto),
                   url: img.url,
@@ -765,11 +776,15 @@ export default function ProductsSection() {
         precio: parsedPrice,
         imagen_url: principalUrl,
         personalizable: Boolean(formData.personalizable),
+        stock: formData.stock === "" ? null : Number(formData.stock),
+        opciones: formData.opciones,
+        variantes: formData.variantes,
+        categorias_ids: Object.values(categoriaById).filter((cat) => formData.categorias.includes(cat.nombre)).map((cat) => String(cat.id_categoria)),
       };
 
       const createRes = await fetch(`${API_BASE}/productos/`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders(),
         body: JSON.stringify(createPayload),
       });
 
@@ -785,23 +800,6 @@ export default function ProductsSection() {
       const created = await createRes.json();
       const createdId = String(created.id_producto);
 
-      const selectedCategoryIds = Object.values(categoriaById)
-        .filter((cat) => formData.categorias.includes(cat.nombre))
-        .map((cat) => String(cat.id_categoria));
-
-      if (selectedCategoryIds.length > 0) {
-        await fetch(`${API_BASE}/producto-categorias/bulk`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(
-            selectedCategoryIds.map((catId) => ({
-              id_producto: createdId,
-              id_categoria: catId,
-            })),
-          ),
-        });
-      }
-
       const extraDataPayload = Object.entries(formData.datos_adicionales)
         .filter(([, value]) => String(value || "").trim().length > 0)
         .map(([tipo, valor], index) => ({
@@ -814,7 +812,7 @@ export default function ProductsSection() {
       if (extraDataPayload.length > 0) {
         await fetch(`${API_BASE}/producto-datos-adicionales/bulk`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: authHeaders(),
           body: JSON.stringify(extraDataPayload),
         });
       }
@@ -827,7 +825,7 @@ export default function ProductsSection() {
           imagenesSecundarias.map((img, index) =>
             fetch(`${API_BASE}/imagenes/`, {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
+              headers: authHeaders(),
               body: JSON.stringify({
                 id_producto: createdId,
                 url: img.url,
@@ -868,7 +866,7 @@ export default function ProductsSection() {
 
     fetch(`${API_BASE}/productos/${encodeURIComponent(id)}/activo`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders(),
       body: JSON.stringify({ activo: nuevoEstado }),
     })
       .then(async (res) => {
@@ -1210,6 +1208,16 @@ export default function ProductsSection() {
                 General
               </button>
               <button
+                onClick={() => setTabActivo("variantes")}
+                className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
+                  tabActivo === "variantes"
+                    ? "border-black text-black"
+                    : "border-transparent text-gray-500 hover:text-gray-700"
+                }`}
+              >
+                Variantes
+              </button>
+              <button
                 onClick={() => setTabActivo("adicional")}
                 className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
                   tabActivo === "adicional"
@@ -1222,6 +1230,20 @@ export default function ProductsSection() {
             </div>
 
             <form onSubmit={handleSubmit} noValidate className="flex-1 overflow-y-auto">
+              {tabActivo === "variantes" && (
+                <ProductVariantsEditor
+                  options={formData.opciones || []}
+                  variants={formData.variantes || []}
+                  stock={formData.stock}
+                  basePrice={parsePriceInput(formData.precio)}
+                  onChange={({ options, variants, stock }) => setFormData((prev) => ({
+                    ...prev,
+                    opciones: options,
+                    variantes: variants,
+                    ...(stock !== undefined ? { stock } : {}),
+                  }))}
+                />
+              )}
               {tabActivo === "general" && (
                 <div className={`p-5 space-y-5 ${categoriasDropdownOpen ? "pb-48" : ""}`}>
                   {Object.values(formErrores || {}).some(Boolean) && (

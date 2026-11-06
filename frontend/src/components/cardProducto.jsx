@@ -13,7 +13,7 @@ import { useCart } from "@/context/CartContext";
  */
 export default function CardProducto({ producto, variant = "cart" }) {
   const router = useRouter();
-  const { clave } = useVendedor();
+  const { clave, vendedor } = useVendedor();
   const { addItem, updateQuantity, getItemQuantity } = useCart();
 
   // Normalizar id como string (evita diferencias entre UUID objects / strings)
@@ -26,7 +26,7 @@ export default function CardProducto({ producto, variant = "cart" }) {
   const formatearPrecio = (precio) =>
     Number(precio || 0).toLocaleString("es-MX", {
       style: "currency",
-      currency: "MXN",
+      currency: vendedor?.moneda || "MXN",
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     });
@@ -35,7 +35,10 @@ export default function CardProducto({ producto, variant = "cart" }) {
   const handleAddToCart = (e) => {
     e.stopPropagation();
     if (!idProd) return;
-    console.log("🧪 producto:", producto?.nombre, "personalizable:", producto?.personalizable);
+    if ((producto?.variantes || []).length > 0) {
+      router.push(`/${clave}/productos/${producto.slug}`);
+      return;
+    }
     addItem({
       id_producto: idProd,
       nombre: producto?.nombre ?? producto?.nombre_producto ?? "",
@@ -102,7 +105,7 @@ export default function CardProducto({ producto, variant = "cart" }) {
             onClick={handleAddToCart}
             className="flex items-center space-x-1 text-sm text-gray-500 hover:text-black transition-colors group/button pt-1"
           >
-            <span>{variant === "featured" ? "Ver detalles" : "Agregar al carrito"}</span>
+            <span>{variant === "featured" || (producto?.variantes || []).length > 0 ? "Ver detalles" : "Agregar al carrito"}</span>
             <svg
               className="w-3 h-3 group-hover/button:translate-x-0.5 transition-transform"
               fill="none"

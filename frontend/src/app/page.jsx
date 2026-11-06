@@ -1,43 +1,18 @@
-"use client";
-import { useEffect, useState } from "react";
-import { fetchFromApi } from "@/utils/api";
+import Link from "next/link";
 
-// ✅ Log al cargar el componente
-console.log("🧪 API:", process.env.NEXT_PUBLIC_API_URL);
-
-export default function Page() {
-  const [productos, setProductos] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  useEffect(() => {
-    const fetchProductos = async () => {
-      setLoading(true);
-      try {
-        const data = await fetchFromApi("/productos");
-        setProductos(data);
-      } catch (err) {
-        console.error("❌ Error al cargar productos:", err.message);
-        setError(err.message);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchProductos();
-  }, []);
-
+export default function HomePage() {
   return (
-    <div className="p-4">
-      <h1 className="text-xl font-bold">Producs</h1>
-      {loading && <p>Cargando productos...</p>}
-      {error && <p className="text-red-500">Error: {error}</p>}
-      {!loading && !error && (
-        <pre className="bg-red-500 text-sm p-4 rounded">
-          {JSON.stringify(productos, null, 2)}
-        </pre>
-      )}
-    </div>
-    
+    <main className="min-h-screen bg-gray-50 flex items-center justify-center px-6">
+      <section className="w-full max-w-xl bg-white border border-gray-200 rounded-2xl p-8 sm:p-12 text-center shadow-sm">
+        <p className="text-sm font-semibold tracking-wide text-gray-500 uppercase">VentasYa</p>
+        <h1 className="mt-3 text-3xl sm:text-4xl font-bold text-gray-950">Vende de forma simple</h1>
+        <p className="mt-4 text-gray-600 leading-relaxed">
+          Administra tu catálogo, inventario y cotizaciones desde un solo lugar.
+        </p>
+        <Link href="/login" className="mt-8 inline-flex justify-center rounded-lg bg-black px-6 py-3 text-sm font-medium text-white hover:bg-gray-800">
+          Entrar al panel
+        </Link>
+      </section>
+    </main>
   );
 }

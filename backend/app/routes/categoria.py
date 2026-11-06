@@ -4,11 +4,15 @@ from uuid import UUID
 from app.db.database import get_db
 from app.models.categoria import Categoria
 from app.schemas.categoria import CategoriaCreate, CategoriaOut
+from app.core.auth import get_current_vendedor, require_vendedor_id
 
 router = APIRouter(prefix="/categorias", tags=["categorias"])
 
 @router.post("/", response_model=CategoriaOut)
-def crear_categoria(categoria: CategoriaCreate, db: Session = Depends(get_db)):
+def crear_categoria(categoria: CategoriaCreate, db: Session = Depends(get_db), auth=Depends(get_current_vendedor)):
+    if categoria.id_vendedor != require_vendedor_id(auth):
+        from fastapi import HTTPException
+        raise HTTPException(status_code=403, detail="No puedes crear categorías para otro vendedor")
     nueva = Categoria(**categoria.dict())
     db.add(nueva)
     db.commit()

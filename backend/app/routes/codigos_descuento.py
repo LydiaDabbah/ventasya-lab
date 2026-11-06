@@ -8,6 +8,7 @@ from app.core.money import money
 from app.db.database import SessionLocal
 from app.models.codigo_descuento import CodigoDescuento
 from app.schemas.codigo_descuento import CodigoDescuentoCreate, CodigoDescuentoOut
+from app.core.auth import get_current_vendedor, require_vendedor_id
 
 router = APIRouter(prefix="/codigos", tags=["Codigos"])
 
@@ -49,7 +50,10 @@ def calcular_descuento_obj(codigo_obj: CodigoDescuento, subtotal: float, id_vend
 
 
 @router.post("/", response_model=CodigoDescuentoOut)
-def crear_codigo(payload: CodigoDescuentoCreate, db: Session = Depends(get_db)):
+def crear_codigo(payload: CodigoDescuentoCreate, db: Session = Depends(get_db), auth=Depends(get_current_vendedor)):
+    seller_id = require_vendedor_id(auth)
+    if payload.id_vendedor and payload.id_vendedor != seller_id:
+        raise HTTPException(status_code=403, detail="No autorizado")
     code_norm = _norm_code(payload.codigo)
     existing = db.query(CodigoDescuento).filter(CodigoDescuento.codigo == code_norm).first()
     if existing:
@@ -62,7 +66,7 @@ def crear_codigo(payload: CodigoDescuentoCreate, db: Session = Depends(get_db)):
         valor=payload.valor,
         activo=payload.activo if payload.activo is not None else True,
         fecha_expiracion=payload.fecha_expiracion,
-        id_vendedor=payload.id_vendedor,
+        id_vendedor=seller_id,
         minimo_subtotal=payload.minimo_subtotal,
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow(),
@@ -80,14 +84,23 @@ def crear_codigo(payload: CodigoDescuentoCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/", response_model=List[CodigoDescuentoOut])
-def listar_codigos(activo: Optional[bool] = Query(None), id_vendedor: Optional[str] = Query(None), db: Session = Depends(get_db)):
-    q = db.query(CodigoDescuento)
+def listar_codigos(activo: Optional[bool] = Query(None), id_vendedor: Optional[str] = Query(None), db: Session = Depends(get_db), auth=Depends(get_current_vendedor)):
+    seller_id = require_vendedor_id(auth)
+    if id_vendedor and str(id_vendedor) != str(seller_id):
+        raise HTTPException(status_code=403, detail="No autorizado")
+    q = db.query(CodigoDescuento).filter(CodigoDescuento.id_vendedor == seller_id)
     if activo is not None:
         q = q.filter(CodigoDescuento.activo == activo)
-    if id_vendedor:
-        q = q.filter(CodigoDescuento.id_vendedor == id_vendedor)
     items = q.order_by(CodigoDescuento.created_at.desc()).all()
     return items
+
+
+@router.get("/id/{codigo_id}", response_model=CodigoDescuentoOut)
+def obtener_codigo_por_id(codigo_id: UUID, db: Session = Depends(get_db)):
+    codigo = db.query(CodigoDescuento).filter(CodigoDescuento.id == codigo_id).first()
+    if not codigo:
+        raise HTTPException(status_code=404, detail="Código no encontrado")
+    return codigo
 
 
 @router.get("/{codigo}", response_model=CodigoDescuentoOut)

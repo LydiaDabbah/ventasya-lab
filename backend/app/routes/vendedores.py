@@ -7,8 +7,8 @@ from passlib.context import CryptContext
 from datetime import datetime
 import uuid
 from app.core.auth import create_access_token
-from app.core.auth import get_current_vendedor
-from app.schemas.vendedor import VendedorCreate, VendedorOut, VendedorLogin
+from app.core.auth import get_current_vendedor, require_vendedor_id
+from app.schemas.vendedor import VendedorCreate, VendedorOut, VendedorLogin, VendedorUpdate
 
 router = APIRouter(prefix="/vendedores", tags=["Vendedores"])
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -111,11 +111,43 @@ def ruta_protegida(vendedor = Depends(get_current_vendedor)):
     return {"mensaje": f"Hola {vendedor['clave']}, esta es una ruta protegida."}
 
 
-@router.put("/password")
-def actualizar_password(data: VendedorPasswordUpdate, db: Session = Depends(get_db)):
-    vendedor = db.query(Vendedor).filter(Vendedor.email == data.email).first()
+@router.get("/me", response_model=VendedorOut)
+def vendedor_actual(auth=Depends(get_current_vendedor), db: Session = Depends(get_db)):
+    vendedor = db.query(Vendedor).filter(Vendedor.id_vendedor == require_vendedor_id(auth)).first()
+    if not vendedor or not vendedor.activo:
+        raise HTTPException(status_code=401, detail="Vendedor no disponible")
+    return vendedor
+
+
+@router.patch("/me", response_model=VendedorOut)
+def actualizar_vendedor(payload: VendedorUpdate, auth=Depends(get_current_vendedor), db: Session = Depends(get_db)):
+    vendedor = db.query(Vendedor).filter(Vendedor.id_vendedor == require_vendedor_id(auth)).first()
     if not vendedor:
         raise HTTPException(status_code=404, detail="Vendedor no encontrado")
+    data = payload.model_dump(exclude_unset=True)
+    if "email" in data or "telefono" in data:
+        duplicate = db.query(Vendedor).filter(
+            Vendedor.id_vendedor != vendedor.id_vendedor,
+            ((Vendedor.email == data.get("email")) if data.get("email") else False) |
+            ((Vendedor.telefono == data.get("telefono")) if data.get("telefono") else False),
+        ).first()
+        if duplicate:
+            raise HTTPException(status_code=409, detail="El correo o teléfono ya está en uso")
+    for field, value in data.items():
+        setattr(vendedor, field, value)
+    vendedor.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(vendedor)
+    return vendedor
+
+
+@router.put("/password")
+def actualizar_password(data: VendedorPasswordUpdate, auth=Depends(get_current_vendedor), db: Session = Depends(get_db)):
+    vendedor = db.query(Vendedor).filter(Vendedor.id_vendedor == require_vendedor_id(auth)).first()
+    if not vendedor:
+        raise HTTPException(status_code=404, detail="Vendedor no encontrado")
+    if str(vendedor.email).casefold() != str(data.email).casefold():
+        raise HTTPException(status_code=403, detail="No autorizado")
 
     # ✅ Verifica la contraseña actual
     if not pwd_context.verify(data.old_password, vendedor.password_hash):

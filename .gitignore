@@ -1,3 +1,9 @@
 node_modules/
 frontend/.next/
 backend/venv/
+__pycache__/
+*.py[cod]
+.DS_Store
+.env
+.env.*
+!.env.example

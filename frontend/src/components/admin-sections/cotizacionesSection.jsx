@@ -4,6 +4,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import Link from "next/link";
 import { Check, ChevronDown, ChevronRight, ChevronUp, Copy, ExternalLink, Eye, Funnel, Search, X } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { authHeaders } from "@/utils/api";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -147,7 +148,7 @@ export default function CotizacionesSection() {
   const fetchVersiones = useCallback(async (idCotizacion, signal) => {
     const res = await fetch(
       `${API_BASE}/cotizaciones/versiones/por-cotizacion/${encodeURIComponent(idCotizacion)}`,
-      { signal },
+      { signal, headers: authHeaders() },
     );
     if (!res.ok) throw new Error("No se pudieron cargar versiones");
     const data = await res.json();
@@ -166,7 +167,7 @@ export default function CotizacionesSection() {
     try {
       const res = await fetch(
         `${API_BASE}/cotizaciones/?id_vendedor=${encodeURIComponent(vendedor.id_vendedor)}`,
-        { signal },
+        { signal, headers: authHeaders() },
       );
 
       if (!res.ok) {
@@ -436,7 +437,7 @@ export default function CotizacionesSection() {
         `${API_BASE}/cotizaciones/${encodeURIComponent(cotizacionId)}/status${query}`,
         {
           method: "PATCH",
-          headers: { "Content-Type": "application/json" },
+          headers: authHeaders(),
           body: JSON.stringify({ status: newStatus }),
         },
       );
@@ -485,6 +486,7 @@ export default function CotizacionesSection() {
         `${API_BASE}/cotizaciones/versiones/activar/${encodeURIComponent(version.id_version)}?id_vendedor=${encodeURIComponent(vendedor.id_vendedor)}`,
         {
           method: "PATCH",
+          headers: authHeaders(),
         },
       );
 

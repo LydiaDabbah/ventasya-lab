@@ -223,7 +223,9 @@ export async function generarPDFCotizacion({
     const need = nota ? 44 : 30;
     ensureSpace(need, drawProductsHeader);
 
-    const nombreBase = p?.nombre_producto || p?.nombre || "Producto";
+    const productoBase = p?.nombre_producto || p?.nombre || "Producto";
+    const variante = p?.nombre_variante || (p?.opciones_variante ? Object.values(p.opciones_variante).join(" / ") : "");
+    const nombreBase = variante ? `${productoBase} — ${variante}` : productoBase;
     const nombreCorto = String(nombreBase).length > 42 ? `${String(nombreBase).substring(0, 42)}...` : String(nombreBase);
 
     text(nombreCorto, cols.producto, y, { size: 9 });

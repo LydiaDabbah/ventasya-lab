@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
+import { authHeaders } from "@/utils/api";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -48,9 +49,11 @@ export default function DashboardSection() {
         const [cotRes, prodRes] = await Promise.all([
           fetch(`${API_BASE}/cotizaciones/?id_vendedor=${encodeURIComponent(vendedor.id_vendedor)}`, {
             signal: controller.signal,
+            headers: authHeaders(),
           }),
           fetch(`${API_BASE}/productos/?id_vendedor=${encodeURIComponent(vendedor.id_vendedor)}`, {
             signal: controller.signal,
+            headers: authHeaders(),
           }),
         ]);
 

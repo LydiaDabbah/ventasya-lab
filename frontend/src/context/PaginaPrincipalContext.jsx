@@ -13,7 +13,6 @@ export const PaginaPrincipalProvider = ({ children }) => {
   const [categorias, setCategorias] = useState([]);
   const [cargando, setCargando] = useState(true);
 
-  console.log(idVendedor)
   useEffect(() => {
     if (!idVendedor) return;
 
@@ -38,7 +37,6 @@ export const PaginaPrincipalProvider = ({ children }) => {
         setDatosVisuales(visualesMap);
         setProductosPopulares(filtradosPopulares.map((p) => p.id_producto));
         setCategorias(cats);
-        console.log(datosVisuales)
       } catch (err) {
         console.error("❌ Error al cargar datos de PaginaPrincipal:", err);
       } finally {

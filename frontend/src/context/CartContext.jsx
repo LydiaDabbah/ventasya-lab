@@ -11,6 +11,7 @@ import React, {
 import { useVendedor } from "@/context/VendedorContext";
 
 const CartContext = createContext(undefined);
+const lineKey = (idProducto, idVariante = null) => `${String(idProducto || "")}::${String(idVariante || "base")}`;
 
 export function CartProvider({ children }) {
   const { clave } = useVendedor();
@@ -41,6 +42,8 @@ export function CartProvider({ children }) {
         const normalized = (Array.isArray(parsed) ? parsed : []).map((it) => ({
           ...it,
           id_producto: it?.id_producto ? String(it.id_producto) : it?.id_producto,
+          id_variante: it?.id_variante ? String(it.id_variante) : null,
+          cart_key: lineKey(it?.id_producto, it?.id_variante),
           nota_personalizable: it?.nota_personalizable ?? null,
           personalizable:
             typeof it?.personalizable === "boolean" ? it.personalizable : false,
@@ -80,12 +83,14 @@ export function CartProvider({ children }) {
     if (!id_producto) return;
 
     const prev = itemsRef.current || [];
-    const existing = prev.find((it) => String(it.id_producto) === id_producto);
+    const id_variante = producto?.id_variante ? String(producto.id_variante) : null;
+    const key = lineKey(id_producto, id_variante);
+    const existing = prev.find((it) => lineKey(it.id_producto, it.id_variante) === key);
 
     let nextItems;
     if (existing) {
       nextItems = prev.map((it) =>
-        String(it.id_producto) === id_producto
+        lineKey(it.id_producto, it.id_variante) === key
           ? {
               ...it,
               cantidad: (Number(it.cantidad) || 0) + 1,
@@ -98,6 +103,10 @@ export function CartProvider({ children }) {
     } else {
       const newItem = {
         id_producto,
+        id_variante,
+        cart_key: key,
+        nombre_variante: producto?.nombre_variante ?? null,
+        opciones_variante: producto?.opciones_variante ?? null,
         nombre_producto: producto?.nombre ?? producto?.nombre_producto ?? "",
         precio_unitario,
         cantidad: 1,
@@ -116,16 +125,17 @@ export function CartProvider({ children }) {
     setItems(nextItems);
   }, []);
 
-  const updateQuantity = useCallback((id_producto_raw, nuevaCantidad) => {
+  const updateQuantity = useCallback((id_producto_raw, nuevaCantidad, id_variante_raw = null) => {
     const id_producto = id_producto_raw ? String(id_producto_raw) : id_producto_raw;
     const prev = itemsRef.current || [];
+    const key = lineKey(id_producto, id_variante_raw);
 
     let nextItems;
     if (nuevaCantidad <= 0) {
-      nextItems = prev.filter((item) => String(item.id_producto) !== id_producto);
+      nextItems = prev.filter((item) => lineKey(item.id_producto, item.id_variante) !== key);
     } else {
       nextItems = prev.map((item) =>
-        String(item.id_producto) === id_producto
+        lineKey(item.id_producto, item.id_variante) === key
           ? {
               ...item,
               cantidad: Number(nuevaCantidad),
@@ -139,12 +149,13 @@ export function CartProvider({ children }) {
     setItems(nextItems);
   }, []);
 
-  const updateNotaPersonalizable = useCallback((id_producto_raw, nota) => {
+  const updateNotaPersonalizable = useCallback((id_producto_raw, nota, id_variante_raw = null) => {
     const id_producto = id_producto_raw ? String(id_producto_raw) : id_producto_raw;
     const prev = itemsRef.current || [];
+    const key = lineKey(id_producto, id_variante_raw);
 
     const nextItems = prev.map((item) => {
-      if (String(item.id_producto) !== id_producto) return item;
+      if (lineKey(item.id_producto, item.id_variante) !== key) return item;
 
       if (!item.personalizable) {
         return { ...item, nota_personalizable: null };
@@ -158,28 +169,31 @@ export function CartProvider({ children }) {
     setItems(nextItems);
   }, []);
 
-  const removeItem = useCallback((id_producto_raw) => {
+  const removeItem = useCallback((id_producto_raw, id_variante_raw = null) => {
     const id_producto = id_producto_raw ? String(id_producto_raw) : id_producto_raw;
     const prev = itemsRef.current || [];
-    const nextItems = prev.filter((item) => String(item.id_producto) !== id_producto);
+    const key = lineKey(id_producto, id_variante_raw);
+    const nextItems = prev.filter((item) => lineKey(item.id_producto, item.id_variante) !== key);
 
     itemsRef.current = nextItems;
     setItems(nextItems);
   }, []);
 
   const getItemQuantity = useCallback(
-    (id_producto_raw) => {
+    (id_producto_raw, id_variante_raw = null) => {
       const id_producto = id_producto_raw ? String(id_producto_raw) : id_producto_raw;
-      const found = (items || []).find((it) => String(it.id_producto) === id_producto);
+      const key = lineKey(id_producto, id_variante_raw);
+      const found = (items || []).find((it) => lineKey(it.id_producto, it.id_variante) === key);
       return found ? Number(found.cantidad || 0) : 0;
     },
     [items]
   );
 
   const getItemById = useCallback(
-    (id_producto_raw) => {
+    (id_producto_raw, id_variante_raw = null) => {
       const id_producto = id_producto_raw ? String(id_producto_raw) : id_producto_raw;
-      return (items || []).find((it) => String(it.id_producto) === id_producto) || null;
+      const key = lineKey(id_producto, id_variante_raw);
+      return (items || []).find((it) => lineKey(it.id_producto, it.id_variante) === key) || null;
     },
     [items]
   );
@@ -196,6 +210,8 @@ export function CartProvider({ children }) {
       const normalized = updatedItems.map((it) => ({
         ...it,
         id_producto: it?.id_producto ? String(it.id_producto) : it?.id_producto,
+        id_variante: it?.id_variante ? String(it.id_variante) : null,
+        cart_key: lineKey(it?.id_producto, it?.id_variante),
         precio_unitario: Number(it.precio_unitario || it.precio || 0),
         cantidad: Number(it.cantidad || 0),
         subtotal: Number(
@@ -209,10 +225,10 @@ export function CartProvider({ children }) {
       }));
 
       const prev = itemsRef.current || [];
-      const byId = new Map(normalized.map((ni) => [String(ni.id_producto), ni]));
+      const byId = new Map(normalized.map((ni) => [lineKey(ni.id_producto, ni.id_variante), ni]));
 
       const merged = prev.map((p) => {
-        const k = String(p.id_producto);
+        const k = lineKey(p.id_producto, p.id_variante);
         if (!byId.has(k)) return p;
 
         const ni = byId.get(k);

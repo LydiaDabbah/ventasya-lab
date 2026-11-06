@@ -9,8 +9,8 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import Image from "next/image";
 import { CotizacionClienteForm } from "@/components/cotizacionClienteForm";
-import { CotizacionEnvioSection } from "@/components/CotizacionEnvio";
-import { CotizacionTotalesCard } from "@/components/CotizacionTotalesCard";
+import { CotizacionEnvioSection } from "@/components/cotizacionEnvio";
+import { CotizacionTotalesCard } from "@/components/cotizacionTotalesCard";
 import { fetchFromApi } from "@/utils/api";
 import { priceSync } from "@/utils/priceSync";
 import { createCotizacion } from "@/utils/createCotizacion";
@@ -208,6 +208,7 @@ export default function CotizacionPage() {
           : "Monto especificado",
       productos: items.map((it) => ({
         id_producto: it.id_producto,
+        id_variante: it.id_variante || null,
         cantidad: Number(it.cantidad || 0),
         nota_personalizable: it.nota_personalizable?.trim()
           ? it.nota_personalizable.trim()
@@ -406,7 +407,7 @@ export default function CotizacionPage() {
               <div className="space-y-4 max-h-[502px] overflow-y-auto pr-1">
                 {items.map((item) => (
                   <div
-                    key={item.id_producto}
+                    key={item.cart_key || `${item.id_producto}-${item.id_variante || "base"}`}
                     className="flex gap-4 pb-4 border-b last:border-0"
                   >
                     <div className="relative w-16 h-16 flex-shrink-0">
@@ -422,6 +423,7 @@ export default function CotizacionPage() {
                       <h3 className="font-medium text-sm truncate">
                         {item.nombre_producto}
                       </h3>
+                      {item.nombre_variante && <p className="text-xs text-gray-500">{item.nombre_variante}</p>}
 
                       {item.status === "removed" && (
                         <div className="text-xs text-red-600 mt-1">

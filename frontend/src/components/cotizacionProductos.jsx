@@ -18,13 +18,13 @@ export default function CotizacionProductos({
     if (!isEditing) return;
     const next = {};
     (productos || []).forEach((item) => {
-      next[String(item.id_producto)] = item.nota_personalizable ?? "";
+      next[`${item.id_producto}-${item.id_variante || "base"}`] = item.nota_personalizable ?? "";
     });
     setNoteDraftById(next);
   }, [isEditing, productos]);
 
   const openNoteEditor = (item) => {
-    const id = String(item.id_producto);
+    const id = `${item.id_producto}-${item.id_variante || "base"}`;
     setEditingNoteId(id);
     setNoteDraftById((prev) => ({
       ...prev,
@@ -33,14 +33,14 @@ export default function CotizacionProductos({
   };
 
   const saveAndCloseNoteEditor = (item) => {
-    const id = String(item.id_producto);
-    onUpdateNotaPersonalizable(item.id_producto, noteDraftById[id] ?? "");
+    const id = `${item.id_producto}-${item.id_variante || "base"}`;
+    onUpdateNotaPersonalizable(item.id_producto, noteDraftById[id] ?? "", item.id_variante);
     setEditingNoteId(null);
   };
 
-  const handleCantidadChange = (idProducto, value) => {
+  const handleCantidadChange = (idProducto, idVariante, value) => {
     if (value === "") {
-      onUpdateQuantity(idProducto, 1);
+      onUpdateQuantity(idProducto, 1, idVariante);
       return;
     }
 
@@ -48,21 +48,21 @@ export default function CotizacionProductos({
 
     const numericValue = Number(value);
     if (numericValue > 99) {
-      onUpdateQuantity(idProducto, 99);
+      onUpdateQuantity(idProducto, 99, idVariante);
       return;
     }
 
     if (numericValue < 1) {
-      onUpdateQuantity(idProducto, 1);
+      onUpdateQuantity(idProducto, 1, idVariante);
       return;
     }
 
-    onUpdateQuantity(idProducto, numericValue);
+    onUpdateQuantity(idProducto, numericValue, idVariante);
   };
 
-  const handleCantidadBlur = (idProducto, cantidadActual) => {
+  const handleCantidadBlur = (idProducto, idVariante, cantidadActual) => {
     if (cantidadActual === "" || Number(cantidadActual) < 1) {
-      onUpdateQuantity(idProducto, 1);
+      onUpdateQuantity(idProducto, 1, idVariante);
     }
   };
 
@@ -90,7 +90,7 @@ export default function CotizacionProductos({
 
           return (
             <div
-              key={String(item.id_producto)}
+              key={`${item.id_producto}-${item.id_variante || "base"}`}
               className="flex gap-4 py-4 border-b first:pt-0 last:pb-0 last:border-0"
             >
             <div className="relative w-16 h-16 sm:w-20 sm:h-20 flex-shrink-0">
@@ -119,6 +119,7 @@ export default function CotizacionProductos({
               <h3 className="font-medium text-gray-900 mb-1">
                 {item.nombre_producto}
               </h3>
+              {item.nombre_variante && <p className="text-xs text-gray-500 mb-1">{item.nombre_variante}</p>}
 
               <p className="text-sm text-gray-600 mb-2">
                 ${Number(item.precio_unitario || 0).toLocaleString("es-MX", {
@@ -134,9 +135,9 @@ export default function CotizacionProductos({
                       onClick={() => {
                         const cantidadActual = Number(item.cantidad || 0);
                         if (cantidadActual <= 1) {
-                          onRemoveProduct(item.id_producto);
+                          onRemoveProduct(item.id_producto, item.id_variante);
                         } else {
-                          onUpdateQuantity(item.id_producto, cantidadActual - 1);
+                          onUpdateQuantity(item.id_producto, cantidadActual - 1, item.id_variante);
                         }
                       }}
                       className={`w-7 h-7 flex items-center justify-center rounded transition-colors ${
@@ -159,10 +160,10 @@ export default function CotizacionProductos({
                       pattern="[0-9]*"
                       value={item.cantidad}
                       onChange={(e) =>
-                        handleCantidadChange(item.id_producto, e.target.value)
+                        handleCantidadChange(item.id_producto, item.id_variante, e.target.value)
                       }
                       onBlur={() =>
-                        handleCantidadBlur(item.id_producto, item.cantidad)
+                        handleCantidadBlur(item.id_producto, item.id_variante, item.cantidad)
                       }
                       className="w-10 text-center text-sm font-semibold text-black bg-transparent border-none outline-none"
                     />
@@ -171,7 +172,8 @@ export default function CotizacionProductos({
                       onClick={() =>
                         onUpdateQuantity(
                           item.id_producto,
-                          Math.min(99, Number(item.cantidad || 0) + 1)
+                          Math.min(99, Number(item.cantidad || 0) + 1),
+                          item.id_variante
                         )
                       }
                       className="w-7 h-7 flex items-center justify-center rounded bg-black text-white hover:bg-gray-800 transition-colors"
@@ -183,15 +185,15 @@ export default function CotizacionProductos({
 
                   {canHaveNota && (
                     <div>
-                      {editingNoteId === String(item.id_producto) ? (
+                      {editingNoteId === `${item.id_producto}-${item.id_variante || "base"}` ? (
                         <div className="flex items-center gap-2">
                           <input
                             type="text"
-                            value={noteDraftById[String(item.id_producto)] ?? ""}
+                            value={noteDraftById[`${item.id_producto}-${item.id_variante || "base"}`] ?? ""}
                             onChange={(e) =>
                               setNoteDraftById((prev) => ({
                                 ...prev,
-                                [String(item.id_producto)]: e.target.value,
+                                [`${item.id_producto}-${item.id_variante || "base"}`]: e.target.value,
                               }))
                             }
                             onKeyDown={(e) => {

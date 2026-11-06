@@ -8,6 +8,8 @@ from app.schemas.producto_categoria_sistema import (
     ProductoCategoriaSistemaCreate,
     ProductoCategoriaSistemaOut,
 )
+from app.models.producto import Producto
+from app.core.auth import get_current_vendedor, require_vendedor_id
 
 router = APIRouter(prefix="/producto-categoria-sistema", tags=["ProductoCategoriaSistema"])
 
@@ -20,8 +22,11 @@ def get_db():
 
 @router.post("/", response_model=ProductoCategoriaSistemaOut)
 def asignar_categoria_sistema(
-    data: ProductoCategoriaSistemaCreate, db: Session = Depends(get_db)
+    data: ProductoCategoriaSistemaCreate, db: Session = Depends(get_db), auth=Depends(get_current_vendedor)
 ):
+    seller_id = require_vendedor_id(auth)
+    if data.id_vendedor != seller_id or not db.query(Producto).filter(Producto.id_producto == data.id_producto, Producto.id_vendedor == seller_id).first():
+        raise HTTPException(status_code=403, detail="No autorizado")
     existente = (
         db.query(ProductoCategoriaSistema)
         .filter_by(id_producto=data.id_producto, categoria=data.categoria.value)
@@ -50,11 +55,15 @@ def obtener_por_vendedor(id_vendedor, db: Session = Depends(get_db)):
 def asignar_categorias_sistema_bulk(
     datos: list[ProductoCategoriaSistemaCreate] = Body(...),
     db: Session = Depends(get_db),
+    auth=Depends(get_current_vendedor),
 ):
     ahora = datetime.utcnow()
     nuevas = []
 
     for data in datos:
+        seller_id = require_vendedor_id(auth)
+        if data.id_vendedor != seller_id or not db.query(Producto).filter(Producto.id_producto == data.id_producto, Producto.id_vendedor == seller_id).first():
+            raise HTTPException(status_code=403, detail="No autorizado")
         existente = (
             db.query(ProductoCategoriaSistema)
             .filter_by(id_producto=data.id_producto, categoria=data.categoria.value)

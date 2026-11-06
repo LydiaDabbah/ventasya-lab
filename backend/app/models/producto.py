@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Column, String, Boolean, Float, DateTime, ForeignKey
+from sqlalchemy import Column, String, Boolean, Float, DateTime, ForeignKey, Integer, CheckConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -27,6 +27,8 @@ class Producto(Base):
     sku = Column(String, unique=True, nullable=True)
 
     activo = Column(Boolean, nullable=False, default=True)
+    # null conserva compatibilidad para productos cuyo inventario aún no se controla.
+    stock = Column(Integer, nullable=True, default=None)
 
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -36,3 +38,13 @@ class Producto(Base):
         back_populates="producto",
         cascade="all, delete-orphan",
     )
+    opciones = relationship(
+        "ProductOption", back_populates="producto", cascade="all, delete-orphan",
+        order_by="ProductOption.orden", lazy="selectin"
+    )
+    variantes = relationship(
+        "ProductVariant", back_populates="producto", cascade="all, delete-orphan",
+        order_by="ProductVariant.created_at", lazy="selectin"
+    )
+
+    __table_args__ = (CheckConstraint("stock >= 0", name="ck_productos_stock_nonnegative"),)

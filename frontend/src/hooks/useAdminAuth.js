@@ -93,8 +93,6 @@ const [rememberMe, setRememberMe] = useState(false);
       });
   
       const data = await res.json();
-      console.log("Login response:", data);
-  
       if (res.ok) {
         // ✅ Guarda en localStorage o sessionStorage según rememberMe
         if (rememberMe) {

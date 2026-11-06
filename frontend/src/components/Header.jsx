@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react"
-import CartSheet from "@/components/CartSheet.jsx"
+import CartSheet from "@/components/cartSheet.jsx"
 import { useCart } from "@/context/CartContext.jsx"
 
 export default function Header() {

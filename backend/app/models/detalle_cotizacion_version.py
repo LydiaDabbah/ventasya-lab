@@ -1,5 +1,5 @@
 # app/models/detalle_cotizacion_version.py
-from sqlalchemy import Column, String, Integer, Float, ForeignKey
+from sqlalchemy import Column, String, Integer, Float, ForeignKey, JSON
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 import uuid
@@ -11,10 +11,14 @@ class DetalleCotizacionVersion(Base):
     id_detalle_version = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     id_version = Column(UUID(as_uuid=True), ForeignKey("cotizaciones_versiones.id_version"), nullable=False)
     id_producto = Column(UUID(as_uuid=True), nullable=False)
+    id_variante = Column(UUID(as_uuid=True), nullable=True)
     nombre_producto = Column(String, nullable=False)
     precio_unitario = Column(Float, nullable=False)
     cantidad = Column(Integer, nullable=False)
     subtotal = Column(Float, nullable=True)
+    nombre_variante = Column(String, nullable=True)
+    opciones_variante = Column(JSON, nullable=True)
+    sku_variante = Column(String, nullable=True)
 
     # 🔥 NUEVO CAMPO (nullable)
     nota_personalizable = Column(String, nullable=True)

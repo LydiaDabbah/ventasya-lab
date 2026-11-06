@@ -12,13 +12,13 @@ import {
   Pencil,
 } from "lucide-react";
 import { generarPDFCotizacion } from "@/utils/generarPDFCotizacion";
-import CotizacionProductos from "@/components/CotizacionProductos";
-import SelectorProductosCotizacion from "@/components/SelectorProductosCotizacion";
+import CotizacionProductos from "@/components/cotizacionProductos";
+import SelectorProductosCotizacion from "@/components/selectorProductosCotizacion";
 import ModalSimple from "@/components/UI/modalSimple";
 import { useVendedor } from "@/context/VendedorContext";
 import { useCotizacion } from "@/context/CotizacionContext";
 import { useAuth } from "@/context/AuthContext";
-import DiscountCode from "@/components/DiscountCode";
+import DiscountCode from "@/components/discountCode";
 import { getCodigoById } from "@/utils/getCodigoById";
 import { useVolverAlCatalogo } from "@/hooks/useVolverAlCatalogo";
 
@@ -431,7 +431,13 @@ export default function ResumenCotizacionInner() {
 
     const tienda = clave || vendedor?.clave || "";
     const link = typeof window !== "undefined" ? window.location.href : "";
-    const mensaje = `${tienda}\n\nHola! Te envío mi cotización:\n${link}`;
+    const currency = vendedor?.moneda || "MXN";
+    const money = (value) => new Intl.NumberFormat("es-MX", { style: "currency", currency }).format(Number(value || 0));
+    const productLines = (cotizacion?.productos || []).map((item) => {
+      const options = item.nombre_variante || (item.opciones_variante ? Object.entries(item.opciones_variante).map(([name, value]) => `${name}: ${value}`).join(", ") : "");
+      return `${item.cantidad} × ${item.nombre_producto}${options ? ` (${options})` : ""} — ${money(item.precio_unitario)} c/u`;
+    }).join("\n");
+    const mensaje = `Pedido VentasYa · ${tienda}\n\n${productLines}\n\nTotal: ${money(displayedTotal)}\n${link}`;
     const telefono = String(vendedor.telefono).replace(/[^\d]/g, "");
     const whatsappUrl = `https://wa.me/${telefono}?text=${encodeURIComponent(
       mensaje

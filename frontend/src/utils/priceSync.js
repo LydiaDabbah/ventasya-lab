@@ -2,7 +2,7 @@
 // Utilidad independiente para chequear precios y devolver diffs + updatedItems + removed/inactive
 export async function priceSync({ items = [], apiBase = "http://localhost:8000", signal = undefined } = {}) {
     if (!items || items.length === 0) return { changed: false };
-  
+
     const rawIds = items.map((i) => (i?.id_producto ? String(i.id_producto).trim() : "")).filter(Boolean);
   
     // Validar ids tipo UUID (si no quieres validar, elimina el regex)
@@ -92,7 +92,25 @@ export async function priceSync({ items = [], apiBase = "http://localhost:8000",
         // si existe pero está inactivo -> devolvemos tal cual (caller podrá marcar/informar)
         if (!master.activo) return { ...it };
   
-        const precioNuevo = Number(master.precio ?? 0);
+        const variant = it.id_variante
+          ? (master.raw.variantes || []).find((v) => String(v.id_variante) === String(it.id_variante))
+          : null;
+        if (it.id_variante && (!variant || variant.activo === false || Number(variant.stock || 0) < Number(it.cantidad || 0))) {
+          changed = true;
+          if (!inactive.some((entry) => entry.id === key)) inactive.push({ id: key, raw: master.raw });
+          return { ...it, status: "inactive" };
+        }
+        if (!it.id_variante && (master.raw.variantes || []).length > 0) {
+          changed = true;
+          if (!inactive.some((entry) => entry.id === key)) inactive.push({ id: key, raw: master.raw });
+          return { ...it, status: "inactive" };
+        }
+        if (!it.id_variante && master.raw.stock != null && Number(master.raw.stock) < Number(it.cantidad || 0)) {
+          changed = true;
+          if (!inactive.some((entry) => entry.id === key)) inactive.push({ id: key, raw: master.raw });
+          return { ...it, status: "inactive" };
+        }
+        const precioNuevo = Number(variant?.precio ?? master.precio ?? 0);
         const precioActual = Number(it.precio_unitario ?? it.precio ?? 0);
         if (precioNuevo !== precioActual) {
           changed = true;
@@ -133,4 +151,3 @@ export async function priceSync({ items = [], apiBase = "http://localhost:8000",
       if (controller) controller = null;
     }
   }
-  

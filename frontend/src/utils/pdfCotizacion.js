@@ -10,7 +10,7 @@ export async function generarPdfCotizacion({
     total,
   }) {
     if (!items || items.length === 0) return;
-  
+
     const { jsPDF } = await import("jspdf");
     const autoTable = (await import("jspdf-autotable")).default;
   
@@ -77,7 +77,7 @@ export async function generarPdfCotizacion({
       startY: y,
       head: [["Producto", "Cant.", "Precio unit.", "Subtotal"]],
       body: items.map((item) => [
-        item.nombre_producto,
+        item.nombre_variante ? `${item.nombre_producto} — ${item.nombre_variante}` : item.nombre_producto,
         item.cantidad.toString(),
         `$${item.precio_unitario.toLocaleString("es-MX", {
           minimumFractionDigits: 2,
@@ -132,5 +132,3 @@ export async function generarPdfCotizacion({
   
     doc.save("cotizacion.pdf");
   }
-  
-  
